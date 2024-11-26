@@ -13,6 +13,7 @@ from algo_api import AlgoAPI
 class Backend:
     def __init__(self):
         self.algo_api = AlgoAPI()
+        self.video = {}
 
     @staticmethod
     def show_res_by_slider(frame_per, click_stack):
@@ -115,7 +116,8 @@ class Backend:
     def drawing_board_get_input_first_frame(input_first_frame):
         return input_first_frame
 
-    def undo_last_point(self, seg_tracker, frame_num, click_stack):
+    @staticmethod
+    def undo_last_point(seg_tracker, frame_num, click_stack):
         points_dict, labels_dict = click_stack
 
         if frame_num in points_dict and frame_num in labels_dict:
@@ -177,9 +179,7 @@ class Backend:
             image = cv2.imread(image_path)
             h, w = image.shape[:2]
             x, y = w / 2, h / 2
-
         return x, y
-
 
     def toggle_segmentation(self, seg_tracker, frame_num, click_stack):
         points_dict, labels_dict = click_stack
@@ -233,7 +233,6 @@ class Backend:
 
         # Toggle state for next click
         self.toggle_segmentation.show_seg = not current_state
-
         return seg_tracker, masked_frame, masked_frame, click_stack
 
     @staticmethod
@@ -313,13 +312,8 @@ class Backend:
             print(f"Error splitting video: {e}")
             return None, 0, None
 
-
-    video_segments = []
-
     def handle_large_video_upload(self, file_path):
         """Handle upload and splitting of large video file"""
-        global video_segments
-
         if file_path is None:
             return "No file uploaded", None, gr.Slider.update(), None
         if not os.path.exists(file_path.name):
@@ -360,7 +354,10 @@ class Backend:
                 video_metadata["original_video_path"], video_metadata["video_name"], video_metadata["output_dir"],
                 progress_callback=lambda x: (f"Splitting video: {x:.1f}%", None, gr.Slider.update(), None)
             )
-            video_segments = [segment_infos[i]['path'] for i in range(num_segments)]
+            self.video['metadata'] = video_metadata
+            self.video['paths'] = [segment_infos[i]['path'] for i in range(num_segments)]
+            self.video['segments'] = segment_infos
+
             if segment_infos:
                 metadata["segments"] = segment_infos
                 yield (
@@ -376,18 +373,16 @@ class Backend:
             print(f"Error processing upload: {e}")
             yield f"Error during upload: {str(e)}", None, gr.Slider.update(), None
 
-    @staticmethod
-    def load_video_segment(index):
+    def load_video_segment(self, index):
         """Load a specific segment"""
         print("DEBUG: load_video_segment called!")  # Basic debug print
-        print(f"DEBUG: index={index}, segments={video_segments}")
-        return video_segments[index - 1]
+        print(f"DEBUG: index={index}, segments={self.video['paths']}")
+        return self.video['paths'][index - 1]
 
-    @staticmethod
-    def increment_video_index(current_index):
+    def increment_video_index(self, current_index):
         """Increment video index while staying within bounds"""
-        print(f"Current index: {current_index}, Segments: {video_segments}")  # Debug print
-        max_index = len(video_segments) if video_segments else 1
+        print(f"Current index: {current_index}, Segments: {self.video['paths']}")  # Debug print
+        max_index = len(self.video['paths']) if self.video['paths'] else 1
         return min(max_index, current_index + 1)
 
     @staticmethod

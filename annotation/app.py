@@ -68,7 +68,7 @@ def seg_track_app():
                 with gr.Row():
                     tab_video_input = gr.Tab(label="Video input")
                     with tab_video_input:
-                        input_video = gr.Video(
+                        seg_input_video = gr.Video(
                             label='Input video',
                             elem_id="input_output_video",
                             type="filepath"  # Ensure we get the file path
@@ -186,7 +186,7 @@ def seg_track_app():
             fn=backend.get_meta_from_video,
             inputs=[
                 seg_tracker,
-                input_video,
+                seg_input_video,
                 scale_slider,
                 checkpoint
             ],
@@ -223,7 +223,7 @@ def seg_track_app():
             inputs=[
                 seg_tracker,
                 frame_num,
-                input_video,
+                seg_input_video,
             ],
             outputs=[
                 input_first_frame,
@@ -307,13 +307,13 @@ def seg_track_app():
         large_video_input.upload(
             fn=backend.handle_large_video_upload,
             inputs=[large_video_input],
-            outputs=[upload_status, input_video, video_index_slider],
+            outputs=[upload_status, seg_input_video, video_index_slider],
         )
 
         video_index_slider.change(
             fn=backend.load_video_segment,
             inputs=[video_index_slider],
-            outputs=[input_video],
+            outputs=[seg_input_video],
             api_name="slider_change"  # Add this for debugging
         )
 
