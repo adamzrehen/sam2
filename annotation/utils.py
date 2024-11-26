@@ -2,6 +2,7 @@ import os
 import shutil
 import numpy as np
 import cv2
+import zipfile
 import matplotlib.pyplot as plt
 
 
@@ -79,3 +80,11 @@ def show_mask(mask, image=None, obj_id=None):
                                      image[..., c])
         return image
     return mask_image
+
+
+def zip_folder(folder_path, output_zip_path):
+    with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_STORED) as zipf:
+        for root, _, files in os.walk(folder_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                zipf.write(file_path, os.path.relpath(file_path, folder_path))

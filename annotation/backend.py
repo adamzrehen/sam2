@@ -2,17 +2,17 @@ import os
 import cv2
 import math
 import shutil
-import zipfile
 import gradio as gr
 import ffmpeg
 import numpy as np
-from utils import clear_folder, draw_markers, show_mask
+from utils import clear_folder, draw_markers, show_mask, zip_folder
 from algo_api import AlgoAPI
 
 
 class Backend:
     def __init__(self):
-        self.algo_api = AlgoAPI()
+        self.base_dir = os.path.join(os.getcwd(), 'annotation')
+        self.algo_api = AlgoAPI(base_dir=self.base_dir)
         self.video = {}
 
     @staticmethod
@@ -44,15 +44,6 @@ class Backend:
             if frame_num in points_dict and frame_num in labels_dict:
                 chosen_frame_show = draw_markers(chosen_frame_show, points_dict[frame_num], labels_dict[frame_num])
             return chosen_frame_show, chosen_frame_show, frame_num
-
-    @staticmethod
-    def zip_folder(folder_path, output_zip_path):
-        with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_STORED) as zipf:
-            for root, _, files in os.walk(folder_path):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    zipf.write(file_path, os.path.relpath(file_path, folder_path))
-
 
     def tracking_objects(self, seg_tracker, frame_num, input_video):
         output_dir = 'output_frames'
@@ -103,7 +94,7 @@ class Backend:
         ffmpeg.input(os.path.join(output_combined_dir, '%07d.png'), framerate=out_fps).output(output_video_path,
                                                                                               vcodec='h264_nvenc',
                                                                                               pix_fmt='yuv420p').run()
-        self.zip_folder(output_masks_dir, output_zip_path)
+        zip_folder(output_masks_dir, output_zip_path)
         print("done")
         return final_masked_frame, final_masked_frame, output_video_path, output_video_path, output_zip_path
 
@@ -197,7 +188,7 @@ class Backend:
             # Return clean image but keep points visible
             masked_frame = image.copy()
             if frame_num in points_dict:
-                masked_frame = self.draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
+                masked_frame = draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
         else:
             # Return image with segmentation
             masked_frame = image.copy()
@@ -324,8 +315,7 @@ class Backend:
 
         try:
             # Get original filename
-            video_metadata = {}
-            video_metadata["video_name"] = os.path.splitext(os.path.basename(file_path.name))[0]
+            video_metadata = {"video_name": os.path.splitext(os.path.basename(file_path.name))[0]}
 
             # set output directory
             video_metadata["output_dir"] = os.path.join('data', 'sam2', video_metadata["video_name"])
@@ -354,12 +344,12 @@ class Backend:
                 video_metadata["original_video_path"], video_metadata["video_name"], video_metadata["output_dir"],
                 progress_callback=lambda x: (f"Splitting video: {x:.1f}%", None, gr.Slider.update(), None)
             )
-            self.video['metadata'] = video_metadata
+            self.video['metadata'] = video_metadata.update(metadata)
             self.video['paths'] = [segment_infos[i]['path'] for i in range(num_segments)]
-            self.video['segments'] = segment_infos
 
             if segment_infos:
-                metadata["segments"] = segment_infos
+                self.video['segments'] = segment_infos
+                self.algo_api.update_video_metadata(video_metadata)
                 yield (
                     "Processing complete. Select a segment to begin.",
                     segment_infos[0]['path'],
@@ -377,6 +367,7 @@ class Backend:
         """Load a specific segment"""
         print("DEBUG: load_video_segment called!")  # Basic debug print
         print(f"DEBUG: index={index}, segments={self.video['paths']}")
+        self.algo_api.update_segment_id(index)
         return self.video['paths'][index - 1]
 
     def increment_video_index(self, current_index):

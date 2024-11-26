@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 import ffmpeg
 import gradio as gr
+import pickle
 from utils import clear_folder, mask2bbox, draw_rect, draw_markers, show_mask
 try:
     from sam2.build_sam import build_sam2
@@ -19,8 +20,17 @@ from sam2.build_sam import build_sam2_video_predictor
 
 
 class AlgoAPI:
-    def __init__(self):
-        pass
+    def __init__(self, base_dir):
+        self.base_dir = base_dir
+        self.segment_id = None
+        self.video_metadata = None
+
+    def update_segment_id(self, index):
+        self.segment_id = index
+
+    def update_video_metadata(self, metadata):
+        self.video_metadata = metadata
+        self.segment_id = 0
 
     @staticmethod
     def clean(seg_tracker):
@@ -221,4 +231,17 @@ class AlgoAPI:
             masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
         masked_frame_with_markers = draw_markers(masked_frame, points_dict[ann_frame_idx], labels_dict[ann_frame_idx])
 
+        self.save_inference_state(inference_state)
         return seg_tracker, masked_frame_with_markers, masked_frame_with_markers, click_stack
+
+    def save_inference_state(self, inference_state):
+        output_path = os.path.join(self.base_dir, 'data/sam2', self.video_metadata['video_name'],
+                                   f'segments/inference_state_{self.segment_id}' + '.pkl')
+        with open(output_path, 'wb') as file:
+            pickle.dump(inference_state, file)
+
+    def load_inference_state(self):
+        input_path = self.video_metadata['output_dir'] + f'{self.segment_id}' + '.pkl'
+        with open(input_path, 'rb') as file:
+            inference_state = pickle.load(file)
+        return inference_state
