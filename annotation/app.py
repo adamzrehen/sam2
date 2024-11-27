@@ -97,7 +97,7 @@ def seg_track_app():
                             toggle_seg = gr.Button("👁 Toggle Segmentation")
 
                         input_first_frame = gr.Image(
-                            label='Segment result of first frame',
+                            label='Segmentation results',
                             interactive=True,
                             show_download_button=True,
                             show_label=True,
@@ -151,7 +151,9 @@ def seg_track_app():
                             outputs=[
                                 input_first_frame, drawing_board, frame_num
                             ]
-                        )
+                        ).then(fn=backend.toggle_segmentation,
+                               inputs=[seg_tracker, frame_num, click_stack],
+                               outputs=[seg_tracker, input_first_frame, drawing_board, click_stack])
 
                         new_object_button = gr.Button(
                             value="Add New Object",
@@ -184,27 +186,12 @@ def seg_track_app():
         # listen to the preprocess button click to get the first frame of video with scaling
         preprocess_button.click(
             fn=backend.get_meta_from_video,
-            inputs=[
-                seg_tracker,
-                seg_input_video,
-                scale_slider,
-                checkpoint
-            ],
-            outputs=[
-                seg_tracker, click_stack, input_first_frame, drawing_board, frame_per, output_video, output_mp4,
-                output_mask, ann_obj_id, frame_per
-            ]
-        )
-
-        frame_per.release(
-            fn=backend.show_res_by_slider,
-            inputs=[
-                frame_per, click_stack
-            ],
-            outputs=[
-                input_first_frame, drawing_board, frame_num
-            ]
-        )
+            inputs=[seg_tracker, seg_input_video, scale_slider, checkpoint],
+            outputs=[seg_tracker, click_stack, input_first_frame, drawing_board, output_video, output_mp4,
+                output_mask, ann_obj_id, frame_per]
+        ).then(fn=backend.toggle_segmentation,
+            inputs=[seg_tracker, frame_num, click_stack],
+            outputs=[seg_tracker, input_first_frame, drawing_board, click_stack])
 
         # Interactively modify the mask acc click
         input_first_frame.select(

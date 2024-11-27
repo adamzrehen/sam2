@@ -172,7 +172,7 @@ class AlgoAPI:
             click_stack = self.load_click_stack()
 
         return ((predictor, inference_state, image_predictor), click_stack, first_frame_rgb, first_frame_rgb,
-                0, None, None, None, 0, gr.Slider.update(maximum=num_frames, value=0))
+                None, None, None, 0, gr.Slider.update(maximum=num_frames, value=0))
 
     @staticmethod
     def pack_to_tuple(nested_dict):
@@ -185,7 +185,8 @@ class AlgoAPI:
                 labels_dict[key][subkey] = data['point_labels'][0].cpu().numpy()
         return coords_dict, labels_dict
 
-    def sam_stroke(self, seg_tracker, drawing_board, last_draw, frame_num, ann_obj_id):
+    @staticmethod
+    def sam_stroke(seg_tracker, drawing_board, last_draw, frame_num, ann_obj_id):
         predictor, inference_state, image_predictor = seg_tracker
         image_path = f'output_frames/{frame_num:07d}.jpg'
         image = cv2.imread(image_path)

@@ -18,7 +18,7 @@ def return_java_function(java_input):
                 let images = document.querySelectorAll('img');
                 images.forEach(img => {
                     let scale = img.style.transform ? parseFloat(img.style.transform.match(/scale\\((.*?)\\)/)?.[1] || 1) : 1;
-                    scale = scale * 1.2;  // Zoom in by 1.2x
+                    scale = scale / 1.2;  // Zoom out by dividing scale by 1.2
                     img.style.transform = `scale(${scale})`;
                 });
             }

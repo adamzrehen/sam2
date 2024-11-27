@@ -15,6 +15,7 @@ class Backend:
         self.base_dir = os.path.join(os.getcwd(), 'annotation')
         self.algo_api = AlgoAPI(base_dir=self.base_dir)
         self.video = {}
+        self.segmentation_state = False
 
     @staticmethod
     def show_res_by_slider(frame_per, click_stack):
@@ -43,7 +44,8 @@ class Backend:
                 chosen_frame_show = draw_markers(chosen_frame_show, points_dict[frame_per], labels_dict[frame_per])
             return chosen_frame_show, chosen_frame_show, frame_per
 
-    def tracking_objects(self, seg_tracker, frame_num, input_video):
+    @staticmethod
+    def tracking_objects(seg_tracker, frame_num, input_video):
         output_dir = 'output_frames'
         output_masks_dir = 'output_masks'
         output_combined_dir = 'output_combined'
@@ -93,7 +95,6 @@ class Backend:
                                                                                               vcodec='h264_nvenc',
                                                                                               pix_fmt='yuv420p').run()
         zip_folder(output_masks_dir, output_zip_path)
-        print("done")
         return final_masked_frame, final_masked_frame, output_video_path, output_video_path, output_zip_path
 
     @staticmethod
@@ -179,10 +180,7 @@ class Backend:
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        # Get current state (with or without segmentation)
-        current_state = getattr(self.toggle_segmentation, 'show_seg', True)
-
-        if current_state:
+        if self.segmentation_state:
             # Return clean image but keep points visible
             masked_frame = image.copy()
             if frame_num in points_dict:
@@ -213,15 +211,15 @@ class Backend:
                                     masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
 
                     # Always draw markers
-                    masked_frame = self.draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
+                    masked_frame = draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
 
                 except Exception as e:
                     print(f"Error during segmentation: {e}")
                     # If segmentation fails, at least show the points
-                    masked_frame = self.draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
+                    masked_frame = draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
 
         # Toggle state for next click
-        self.toggle_segmentation.show_seg = not current_state
+        self.segmentation_state = not self.segmentation_state
         return seg_tracker, masked_frame, masked_frame, click_stack
 
     @staticmethod
