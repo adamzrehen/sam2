@@ -5,6 +5,7 @@ import shutil
 import gradio as gr
 import ffmpeg
 import numpy as np
+import pickle
 from utils import clear_folder, draw_markers, show_mask, zip_folder
 from algo_api import AlgoAPI
 
@@ -319,42 +320,52 @@ class Backend:
 
             # set output directory
             video_metadata["output_dir"] = os.path.join('data', 'sam2', video_metadata["video_name"])
-            os.makedirs(video_metadata["output_dir"], exist_ok=True)
+            if os.path.exists(video_metadata["output_dir"]):
+                self.load_existing_video(video_metadata)
+            else:
+                os.makedirs(video_metadata["output_dir"])
 
-            # move file to output directory
-            video_metadata["original_video_path"] = os.path.join(video_metadata["output_dir"],
-                                                                 os.path.basename(file_path.name))
+                # move file to output directory
+                video_metadata["original_video_path"] = os.path.join(video_metadata["output_dir"],
+                                                                     os.path.basename(file_path.name))
+                shutil.move(file_path.name, video_metadata["original_video_path"])
 
-            shutil.move(file_path.name, video_metadata["original_video_path"])
+                if not os.path.exists(video_metadata["original_video_path"]):
+                    return f'ERROR Failed to move file {file_path.name} to {video_metadata["original_video_path"]}', None, gr.Slider.update(), None
 
-            if not os.path.exists(video_metadata["original_video_path"]):
-                return f'ERROR Failed to move file {file_path.name} to {video_metadata["original_video_path"]}', None, gr.Slider.update(), None
+                yield f"Upload complete. Processing video...", None, gr.Slider.update(), video_metadata
+                # Get initial video info
+                try:
+                    video_metadata["probe"] = ffmpeg.probe(video_metadata["original_video_path"])
+                except Exception as e:
+                    print(f"Error getting video info: {e}")
 
-            yield f"Upload complete. Processing video...", None, gr.Slider.update(), video_metadata
-            # Get initial video info
-            try:
-                video_metadata["probe"] = ffmpeg.probe(video_metadata["original_video_path"])
-            except Exception as e:
-                print(f"Error getting video info: {e}")
+                video_metadata["video_info"] = next(s for s in video_metadata["probe"]['streams'] if s['codec_type'] == 'video')
+                video_metadata["total_frames"] = int(video_metadata["video_info"]['nb_frames'])
 
-            video_metadata["video_info"] = next(s for s in video_metadata["probe"]['streams'] if s['codec_type'] == 'video')
-            video_metadata["total_frames"] = int(video_metadata["video_info"]['nb_frames'])
+                segment_infos, num_segments, metadata = self.split_video(
+                    video_metadata["original_video_path"], video_metadata["video_name"], video_metadata["output_dir"],
+                    progress_callback=lambda x: (f"Splitting video: {x:.1f}%", None, gr.Slider.update(), None)
+                )
+                self.video.update({
+                    'video_metadata': video_metadata,
+                    'metadata': metadata,
+                    'paths': [segment_infos[i]['path'] for i in range(num_segments)],
+                    'segments': segment_infos
+                })
 
-            segment_infos, num_segments, metadata = self.split_video(
-                video_metadata["original_video_path"], video_metadata["video_name"], video_metadata["output_dir"],
-                progress_callback=lambda x: (f"Splitting video: {x:.1f}%", None, gr.Slider.update(), None)
-            )
-            self.video['metadata'] = video_metadata.update(metadata)
-            self.video['paths'] = [segment_infos[i]['path'] for i in range(num_segments)]
+                # Save video object
+                with open(os.path.join(self.base_dir, video_metadata["output_dir"],
+                                       f'{video_metadata["video_name"]}_meta.pkl'), 'wb') as file:
+                    pickle.dump(self.video, file)
 
-            if segment_infos:
-                self.video['segments'] = segment_infos
-                self.algo_api.update_video_metadata(video_metadata)
+            if self.video['segments']:
+                self.algo_api.update_video_metadata(self.video['video_metadata'])
                 yield (
                     "Processing complete. Select a segment to begin.",
-                    segment_infos[0]['path'],
-                    gr.Slider.update(maximum=num_segments, value=1),
-                    metadata
+                    self.video['segments'][0]['path'],
+                    gr.Slider.update(maximum=self.video['metadata']['segments_created'], value=1),
+                    self.video['metadata']
                 )
             else:
                 yield "Error: Failed to split video.", None, gr.Slider.update(), None
@@ -362,6 +373,11 @@ class Backend:
         except Exception as e:
             print(f"Error processing upload: {e}")
             yield f"Error during upload: {str(e)}", None, gr.Slider.update(), None
+
+    def load_existing_video(self, video_metadata):
+        with open(os.path.join(self.base_dir, video_metadata["output_dir"],
+                                   f'{video_metadata["video_name"]}_meta.pkl'), 'rb') as file:
+            self.video = pickle.load(file)
 
     def load_video_segment(self, index):
         """Load a specific segment"""

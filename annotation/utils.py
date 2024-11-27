@@ -3,6 +3,7 @@ import shutil
 import numpy as np
 import cv2
 import zipfile
+import hashlib
 import matplotlib.pyplot as plt
 
 
@@ -88,3 +89,12 @@ def zip_folder(folder_path, output_zip_path):
             for file in files:
                 file_path = os.path.join(root, file)
                 zipf.write(file_path, os.path.relpath(file_path, folder_path))
+
+
+def calculate_md5(file_path):
+    md5_hash = hashlib.md5()
+    with open(file_path, "rb") as f:
+        # Read the file in chunks to handle large files
+        for chunk in iter(lambda: f.read(4096), b""):
+            md5_hash.update(chunk)
+    return md5_hash.hexdigest()
