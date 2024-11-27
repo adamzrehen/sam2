@@ -23,13 +23,13 @@ class AlgoAPI:
     def __init__(self, base_dir):
         self.base_dir = base_dir
         self.segment_id = None
-        self.video_metadata = None
+        self.video = None
 
-    def update_segment_id(self, index):
-        self.segment_id = index
+    def update_segment_id(self, segment_id):
+        self.segment_id = segment_id
 
-    def update_video_metadata(self, metadata):
-        self.video_metadata = metadata
+    def update_video(self, video):
+        self.video = video
         self.segment_id = 0
 
     @staticmethod
@@ -157,10 +157,33 @@ class AlgoAPI:
         sam2_model = build_sam2(model_cfg, sam2_checkpoint, device="cuda")
 
         image_predictor = SAM2ImagePredictor(sam2_model)
+
         inference_state = predictor.init_state(video_path=output_dir)
         predictor.reset_state(inference_state)
-        return (predictor, inference_state, image_predictor), (
-            {}, {}), first_frame_rgb, first_frame_rgb, 0, None, None, None, 0
+        num_frames = inference_state['images'].shape[0]
+
+        # Load existing point_inputs_per_obj if available
+        segment_name = os.path.basename(self.video['segments'][self.segment_id]['path'].split('.mp4')[0])
+        inference_state_path = os.path.join(self.base_dir,
+                                            os.path.dirname(self.video['segments'][self.segment_id]['path']),
+                                            f'click_stack_{segment_name}.pkl')
+        click_stack = ({}, {})
+        if os.path.exists(inference_state_path):
+            click_stack = self.load_click_stack()
+
+        return ((predictor, inference_state, image_predictor), click_stack, first_frame_rgb, first_frame_rgb,
+                0, None, None, None, 0, gr.Slider.update(maximum=num_frames, value=0))
+
+    @staticmethod
+    def pack_to_tuple(nested_dict):
+        coords_dict, labels_dict = {}, {}
+        for key, subdict in nested_dict.items():
+            coords_dict[key] = {}
+            labels_dict[key] = {}
+            for subkey, data in subdict.items():
+                coords_dict[key][subkey] = data['point_coords'][0].cpu().numpy()
+                labels_dict[key][subkey] = data['point_labels'][0].cpu().numpy()
+        return coords_dict, labels_dict
 
     def sam_stroke(self, seg_tracker, drawing_board, last_draw, frame_num, ann_obj_id):
         predictor, inference_state, image_predictor = seg_tracker
@@ -219,6 +242,7 @@ class AlgoAPI:
             obj_id=ann_obj_id,
             points=points_dict[ann_frame_idx][ann_obj_id],
             labels=labels_dict[ann_frame_idx][ann_obj_id],
+            clear_old_points=True,
         )
 
         image_path = f'output_frames/{ann_frame_idx:07d}.jpg'
@@ -231,17 +255,20 @@ class AlgoAPI:
             masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
         masked_frame_with_markers = draw_markers(masked_frame, points_dict[ann_frame_idx], labels_dict[ann_frame_idx])
 
-        self.save_inference_state(inference_state)
+        self.save_click_stack(click_stack)
         return seg_tracker, masked_frame_with_markers, masked_frame_with_markers, click_stack
 
-    def save_inference_state(self, inference_state):
-        output_path = os.path.join(self.base_dir, 'data/sam2', self.video_metadata['video_name'],
-                                   f'segments/inference_state_{self.segment_id}' + '.pkl')
+    def save_click_stack(self, click_stack):
+        segment_name = os.path.basename(self.video['segments'][self.segment_id]['path'].split('.mp4')[0])
+        output_path = os.path.join(self.base_dir, 'data/sam2', self.video['video_metadata']['video_name'],
+                                   f'segments/click_stack_{segment_name}' + '.pkl')
         with open(output_path, 'wb') as file:
-            pickle.dump(inference_state, file)
+            pickle.dump(click_stack, file)
 
-    def load_inference_state(self):
-        input_path = self.video_metadata['output_dir'] + f'{self.segment_id}' + '.pkl'
+    def load_click_stack(self):
+        segment_name = os.path.basename(self.video['segments'][self.segment_id]['path'].split('.mp4')[0])
+        input_path = os.path.join(self.base_dir, 'data/sam2', self.video['video_metadata']['video_name'],
+                                  f'segments/click_stack_{segment_name}' + '.pkl')
         with open(input_path, 'rb') as file:
-            inference_state = pickle.load(file)
-        return inference_state
+            click_stack = pickle.load(file)
+        return click_stack

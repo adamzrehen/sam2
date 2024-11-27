@@ -192,7 +192,7 @@ def seg_track_app():
             ],
             outputs=[
                 seg_tracker, click_stack, input_first_frame, drawing_board, frame_per, output_video, output_mp4,
-                output_mask, ann_obj_id
+                output_mask, ann_obj_id, frame_per
             ]
         )
 

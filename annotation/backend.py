@@ -34,17 +34,14 @@ class Backend:
             print("No output results found")
             return None, None
         else:
-            frame_num = math.floor(total_frames_num * frame_per / 100)
-            if frame_per == 100:
-                frame_num = frame_num - 1
-            chosen_frame_path = output_masked_frame_path[frame_num]
+            chosen_frame_path = output_masked_frame_path[frame_per]
             print(f"{chosen_frame_path}")
             chosen_frame_show = cv2.imread(chosen_frame_path)
             chosen_frame_show = cv2.cvtColor(chosen_frame_show, cv2.COLOR_BGR2RGB)
             points_dict, labels_dict = click_stack
-            if frame_num in points_dict and frame_num in labels_dict:
-                chosen_frame_show = draw_markers(chosen_frame_show, points_dict[frame_num], labels_dict[frame_num])
-            return chosen_frame_show, chosen_frame_show, frame_num
+            if frame_per in points_dict and frame_per in labels_dict:
+                chosen_frame_show = draw_markers(chosen_frame_show, points_dict[frame_per], labels_dict[frame_per])
+            return chosen_frame_show, chosen_frame_show, frame_per
 
     def tracking_objects(self, seg_tracker, frame_num, input_video):
         output_dir = 'output_frames'
@@ -321,8 +318,8 @@ class Backend:
             # set output directory
             video_metadata["output_dir"] = os.path.join('data', 'sam2', video_metadata["video_name"])
             if os.path.exists(video_metadata["output_dir"]):
-                self.load_existing_video(video_metadata)
-            else:
+                 status = self.load_existing_video(video_metadata)
+            if not status:
                 os.makedirs(video_metadata["output_dir"])
 
                 # move file to output directory
@@ -331,7 +328,8 @@ class Backend:
                 shutil.move(file_path.name, video_metadata["original_video_path"])
 
                 if not os.path.exists(video_metadata["original_video_path"]):
-                    return f'ERROR Failed to move file {file_path.name} to {video_metadata["original_video_path"]}', None, gr.Slider.update(), None
+                    return (f'ERROR Failed to move file {file_path.name} to {video_metadata["original_video_path"]}',
+                            None, gr.Slider.update(), None)
 
                 yield f"Upload complete. Processing video...", None, gr.Slider.update(), video_metadata
                 # Get initial video info
@@ -360,7 +358,7 @@ class Backend:
                     pickle.dump(self.video, file)
 
             if self.video['segments']:
-                self.algo_api.update_video_metadata(self.video['video_metadata'])
+                self.algo_api.update_video(self.video)
                 yield (
                     "Processing complete. Select a segment to begin.",
                     self.video['segments'][0]['path'],
@@ -375,9 +373,13 @@ class Backend:
             yield f"Error during upload: {str(e)}", None, gr.Slider.update(), None
 
     def load_existing_video(self, video_metadata):
-        with open(os.path.join(self.base_dir, video_metadata["output_dir"],
-                                   f'{video_metadata["video_name"]}_meta.pkl'), 'rb') as file:
-            self.video = pickle.load(file)
+        try:
+            with open(os.path.join(self.base_dir, video_metadata["output_dir"],
+                                       f'{video_metadata["video_name"]}_meta.pkl'), 'rb') as file:
+                self.video = pickle.load(file)
+            return True
+        except Exception as e:
+            return False
 
     def load_video_segment(self, index):
         """Load a specific segment"""
