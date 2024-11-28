@@ -1,9 +1,15 @@
+import os
+
 import gradio as gr
+import yaml
 from java_functions import return_java_function
 from backend import Backend
 
 
 def seg_track_app():
+    with open(os.path.join(os.path.dirname(__file__), 'config.yaml'), "r") as file:
+        config = yaml.safe_load(file)  # safer alternative to yaml.load
+
     css = """
     #input_output_video video {
         max-height: 550px;
@@ -13,7 +19,7 @@ def seg_track_app():
     """
 
     app = gr.Blocks(css=css)
-    backend = Backend()
+    backend = Backend(config)
 
     with app:
         gr.Markdown(

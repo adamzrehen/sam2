@@ -1,0 +1,7 @@
+frames_dir: 'output_frames'
+masks_dir: 'output_masks'
+combined_dir: 'output_combined'
+video_path: 'output_video.mp4'
+zip_path: 'output_masks.zip'
+sam2_checkpoint_tiny: "checkpoints/sam2_hiera_tiny.pt"
+model_cfg_tiny: = "sam2_hiera_t.yaml"

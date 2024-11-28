@@ -20,8 +20,9 @@ from sam2.build_sam import build_sam2_video_predictor
 
 
 class AlgoAPI:
-    def __init__(self, base_dir):
+    def __init__(self, base_dir, config):
         self.base_dir = base_dir
+        self.config = config
         self.segment_id = None
         self.video = None
 
@@ -98,12 +99,12 @@ class AlgoAPI:
             print("Video upload verification failed")
             return None, ({}, {}), None, None, 0, None, None, None, 0
 
-        output_dir = 'output_frames'
-        output_masks_dir = 'output_masks'
-        output_combined_dir = 'output_combined'
-        clear_folder(output_dir)
-        clear_folder(output_masks_dir)
-        clear_folder(output_combined_dir)
+        output_keys = ['frames_dir', 'masks_dir', 'combined_dir']
+        output_paths = {key: os.path.join(self.base_dir, self.video['video_metadata']['output_dir'], self.config[key])
+                        for key in output_keys}
+        for key in ['frames_dir', 'masks_dir', 'combined_dir']:
+            clear_folder(output_paths[key])
+
         if input_video is None:
             return None, ({}, {}), None, None, 0, None, None, None, 0
         cap = cv2.VideoCapture(input_video)
@@ -113,14 +114,14 @@ class AlgoAPI:
         output_frames = int(total_frames * scale_slider)
         frame_interval = max(1, total_frames // output_frames)
         ffmpeg.input(input_video, hwaccel='cuda').output(
-            os.path.join(output_dir, '%07d.jpg'),
+            os.path.join(output_paths['frames_dir'], '%07d.jpg'),
             q=2,
             start_number=0,
             vf=rf'select=not(mod(n\,{frame_interval}))',
             vsync='vfr'
         ).run()
 
-        first_frame_path = os.path.join(output_dir, '0000000.jpg')
+        first_frame_path = os.path.join(output_paths['frames_dir'], '0000000.jpg')
         first_frame = cv2.imread(first_frame_path)
         first_frame_rgb = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
 
@@ -158,7 +159,7 @@ class AlgoAPI:
 
         image_predictor = SAM2ImagePredictor(sam2_model)
 
-        inference_state = predictor.init_state(video_path=output_dir)
+        inference_state = predictor.init_state(video_path=output_paths['frames_dir'])
         predictor.reset_state(inference_state)
         num_frames = inference_state['images'].shape[0]
 

@@ -11,9 +11,10 @@ from algo_api import AlgoAPI
 
 
 class Backend:
-    def __init__(self):
+    def __init__(self, config):
         self.base_dir = os.path.join(os.getcwd(), 'annotation')
-        self.algo_api = AlgoAPI(base_dir=self.base_dir)
+        self.config = config
+        self.algo_api = AlgoAPI(base_dir=self.base_dir, config=self.config)
         self.video = {}
         self.segmentation_state = False
 
@@ -44,19 +45,19 @@ class Backend:
                 chosen_frame_show = draw_markers(chosen_frame_show, points_dict[frame_per], labels_dict[frame_per])
             return chosen_frame_show, chosen_frame_show, frame_per
 
-    @staticmethod
-    def tracking_objects(seg_tracker, frame_num, input_video):
-        output_dir = 'output_frames'
-        output_masks_dir = 'output_masks'
-        output_combined_dir = 'output_combined'
-        output_video_path = 'output_video.mp4'
-        output_zip_path = 'output_masks.zip'
-        clear_folder(output_masks_dir)
-        clear_folder(output_combined_dir)
-        if os.path.exists(output_video_path):
-            os.remove(output_video_path)
-        if os.path.exists(output_zip_path):
-            os.remove(output_zip_path)
+    def tracking_objects(self, seg_tracker, frame_num, input_video):
+        output_keys = ['frames_dir', 'masks_dir', 'combined_dir', 'video_path',
+                       'zip_path']
+        output_paths = {key: os.path.join(self.base_dir, self.video['video_metadata']['output_dir'], self.config[key])
+                        for key in output_keys}
+
+        for key in ['masks_dir', 'combined_dir']:
+            clear_folder(output_paths[key])
+
+        if os.path.exists(output_paths['video_path']):
+            os.remove(output_paths['video_path'])
+        if os.path.exists(output_paths['zip_path']):
+            os.remove(output_paths['zip_path'])
         video_segments = {}
         predictor, inference_state, image_predictor = seg_tracker
         for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
@@ -64,20 +65,20 @@ class Backend:
                 out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
                 for i, out_obj_id in enumerate(out_obj_ids)
             }
-        frame_files = sorted([f for f in os.listdir(output_dir) if f.endswith('.jpg')])
+        frame_files = sorted([f for f in os.listdir(output_paths['frames_dir']) if f.endswith('.jpg')])
         # for frame_idx in sorted(video_segments.keys()):
         for frame_file in frame_files:
             frame_idx = int(os.path.splitext(frame_file)[0])
-            frame_path = os.path.join(output_dir, frame_file)
+            frame_path = os.path.join(output_paths['frames_dir'], frame_file)
             image = cv2.imread(frame_path)
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             masked_frame = image.copy()
             if frame_idx in video_segments:
                 for obj_id, mask in video_segments[frame_idx].items():
                     masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
-                    mask_output_path = os.path.join(output_masks_dir, f'{obj_id}_{frame_idx:07d}.png')
+                    mask_output_path = os.path.join(output_paths['masks_dir'], f'{obj_id}_{frame_idx:07d}.png')
                     cv2.imwrite(mask_output_path, show_mask(mask))
-            combined_output_path = os.path.join(output_combined_dir, f'{frame_idx:07d}.png')
+            combined_output_path = os.path.join(output_paths['combined_dir'], f'{frame_idx:07d}.png')
             combined_image_bgr = cv2.cvtColor(masked_frame, cv2.COLOR_RGB2BGR)
             cv2.imwrite(combined_output_path, combined_image_bgr)
             if frame_idx == frame_num:
@@ -88,14 +89,15 @@ class Backend:
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
         # output_frames = int(total_frames * scale_slider)
-        output_frames = len([name for name in os.listdir(output_combined_dir) if
-                             os.path.isfile(os.path.join(output_combined_dir, name)) and name.endswith('.png')])
+        output_frames = len([name for name in os.listdir(output_paths['combined_dir']) if
+                             os.path.isfile(os.path.join(output_paths['combined_dir'], name)) and name.endswith('.png')])
         out_fps = fps * output_frames / total_frames
-        ffmpeg.input(os.path.join(output_combined_dir, '%07d.png'), framerate=out_fps).output(output_video_path,
+        ffmpeg.input(os.path.join(output_paths['combined_dir'], '%07d.png'), framerate=out_fps).output(output_paths['video_path'],
                                                                                               vcodec='h264_nvenc',
                                                                                               pix_fmt='yuv420p').run()
-        zip_folder(output_masks_dir, output_zip_path)
-        return final_masked_frame, final_masked_frame, output_video_path, output_video_path, output_zip_path
+        zip_folder(output_paths['masks_dir'], output_paths['zip_path'])
+        return (final_masked_frame, final_masked_frame, output_paths['video_path'], output_paths['video_path'],
+                output_paths['zip_path'])
 
     @staticmethod
     def increment_ann_obj_id(ann_obj_id):
@@ -314,13 +316,15 @@ class Backend:
             video_metadata = {"video_name": os.path.splitext(os.path.basename(file_path.name))[0]}
 
             # set output directory
-            video_metadata["output_dir"] = os.path.join('data', 'sam2', video_metadata["video_name"])
+            video_metadata["output_dir"] = os.path.join(self.base_dir, 'data', 'sam2', video_metadata["video_name"])
+
+            status = False
             if os.path.exists(video_metadata["output_dir"]):
-                 status = self.load_existing_video(video_metadata)
+                 status = self.load_existing_video_metadata(video_metadata)
             if not status:
                 os.makedirs(video_metadata["output_dir"])
 
-                # move file to output directory
+                # Move file to output directory
                 video_metadata["original_video_path"] = os.path.join(video_metadata["output_dir"],
                                                                      os.path.basename(file_path.name))
                 shutil.move(file_path.name, video_metadata["original_video_path"])
@@ -370,7 +374,7 @@ class Backend:
             print(f"Error processing upload: {e}")
             yield f"Error during upload: {str(e)}", None, gr.Slider.update(), None
 
-    def load_existing_video(self, video_metadata):
+    def load_existing_video_metadata(self, video_metadata):
         try:
             with open(os.path.join(self.base_dir, video_metadata["output_dir"],
                                        f'{video_metadata["video_name"]}_meta.pkl'), 'rb') as file:
