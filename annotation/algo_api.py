@@ -1,13 +1,11 @@
 import torch
 import gc
 import os
-import shutil
 import cv2
 import numpy as np
-import ffmpeg
 import gradio as gr
 import pickle
-from utils import clear_folder, mask2bbox, draw_rect, draw_markers, show_mask
+from utils import mask2bbox, draw_rect, draw_markers, show_mask
 try:
     from sam2.build_sam import build_sam2
 except ImportError:
@@ -25,6 +23,7 @@ class AlgoAPI:
         self.config = config
         self.segment_id = None
         self.video = None
+        self.segment_masks = {}
 
     def update_segment_id(self, segment_id):
         self.segment_id = segment_id
@@ -46,85 +45,7 @@ class AlgoAPI:
             torch.cuda.empty_cache()
         return None, ({}, {}), None, None, 0, None, None, None, 0
 
-    @staticmethod
-    def verify_upload(video_path):
-        if video_path is None:
-            print("No video file uploaded")
-            return None
-
-        print(f"Uploaded video path: {video_path}")
-
-        try:
-            # Check if file exists and is not empty
-            if not os.path.exists(video_path):
-                print(f"File does not exist: {video_path}")
-                return None
-
-            file_size = os.path.getsize(video_path)
-            print(f"File size in tmp location: {file_size / (1024 * 1024):.2f} MB")
-
-            if file_size == 0:
-                print("Warning: File exists but is empty")
-
-                # Check tmp directory space
-                tmp_dir = os.path.dirname(video_path)
-                total, used, free = shutil.disk_usage(tmp_dir)
-                print(f"Tmp directory space - Total: {total / (1024 ** 3):.1f}GB, "
-                      f"Used: {used / (1024 ** 3):.1f}GB, "
-                      f"Free: {free / (1024 ** 3):.1f}GB")
-
-                return None
-
-            # Try to read first few bytes
-            try:
-                with open(video_path, 'rb') as f:
-                    first_bytes = f.read(1024)
-                    if not first_bytes:
-                        print("Warning: File is not readable")
-                        return None
-            except IOError as e:
-                print(f"Error reading file: {e}")
-                return None
-
-            return video_path
-
-        except Exception as e:
-            print(f"Error accessing file: {e}")
-            return None
-
-    def get_meta_from_video(self, seg_tracker, input_video, scale_slider, checkpoint):
-        # Verify upload first
-        verified_path = self.verify_upload(input_video)
-        if verified_path is None:
-            print("Video upload verification failed")
-            return None, ({}, {}), None, None, 0, None, None, None, 0
-
-        output_keys = ['frames_dir', 'masks_dir', 'combined_dir']
-        output_paths = {key: os.path.join(self.base_dir, self.video['video_metadata']['output_dir'], self.config[key])
-                        for key in output_keys}
-        for key in ['frames_dir', 'masks_dir', 'combined_dir']:
-            clear_folder(output_paths[key])
-
-        if input_video is None:
-            return None, ({}, {}), None, None, 0, None, None, None, 0
-        cap = cv2.VideoCapture(input_video)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        assert total_frames > 0, "No frames found in the input video"
-        cap.release()
-        output_frames = int(total_frames * scale_slider)
-        frame_interval = max(1, total_frames // output_frames)
-        ffmpeg.input(input_video, hwaccel='cuda').output(
-            os.path.join(output_paths['frames_dir'], '%07d.jpg'),
-            q=2,
-            start_number=0,
-            vf=rf'select=not(mod(n\,{frame_interval}))',
-            vsync='vfr'
-        ).run()
-
-        first_frame_path = os.path.join(output_paths['frames_dir'], '0000000.jpg')
-        first_frame = cv2.imread(first_frame_path)
-        first_frame_rgb = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
-
+    def initialize_sam(self, seg_tracker, checkpoint, output_paths):
         if seg_tracker is not None:
             del seg_tracker
             seg_tracker = None
@@ -171,9 +92,26 @@ class AlgoAPI:
         click_stack = ({}, {})
         if os.path.exists(inference_state_path):
             click_stack = self.load_click_stack()
+            predictor = self.initialize_predictor(inference_state, predictor, click_stack)
 
-        return ((predictor, inference_state, image_predictor), click_stack, first_frame_rgb, first_frame_rgb,
-                None, None, None, 0, gr.Slider.update(maximum=num_frames, value=0))
+        return (predictor, inference_state, image_predictor), click_stack, num_frames
+
+    def initialize_predictor(self, inference_state, predictor, click_stack):
+        points_dict, labels_dict = click_stack
+        for frame_num, vals in points_dict.items():
+                for obj_id in vals.keys():
+                    frame_idx, out_obj_ids, out_mask_logits = predictor.add_new_points(
+                        inference_state=inference_state,
+                        frame_idx=frame_num,
+                        obj_id=obj_id,
+                        points=points_dict[frame_num][obj_id],
+                        labels=labels_dict[frame_num][obj_id],
+                    )
+                    self.segment_masks[frame_num] = {
+                        out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+                        for i, out_obj_id in enumerate(out_obj_ids)
+                    }
+        return predictor
 
     @staticmethod
     def pack_to_tuple(nested_dict):
@@ -216,12 +154,8 @@ class AlgoAPI:
         points_dict, labels_dict = click_stack
         predictor, inference_state, image_predictor = seg_tracker
         ann_frame_idx = frame_num  # the frame index we interact with
-        print(f'ann_frame_idx: {ann_frame_idx}')
         point = np.array([[evt.index[0], evt.index[1]]], dtype=np.float32)
-        if point_mode == "Positive":
-            label = np.array([1], np.int32)
-        else:
-            label = np.array([0], np.int32)
+        label = np.array([1], np.int32) if point_mode == "Positive" else np.array([0], np.int32)
 
         if ann_frame_idx not in points_dict:
             points_dict[ann_frame_idx] = {}

@@ -6,7 +6,8 @@ import gradio as gr
 import ffmpeg
 import numpy as np
 import pickle
-from utils import clear_folder, draw_markers, show_mask, zip_folder
+from utils import draw_markers, show_mask, zip_folder
+from file_handler import clear_folder, get_meta_from_video
 from algo_api import AlgoAPI
 
 
@@ -18,10 +19,9 @@ class Backend:
         self.video = {}
         self.segmentation_state = False
 
-    @staticmethod
-    def show_res_by_slider(frame_per, click_stack):
-        image_path = 'output_frames'
-        output_combined_dir = 'output_combined'
+    def show_res_by_slider(self, frame_per, click_stack):
+        image_path = os.path.join(self.video['video_metadata']['output_dir'], 'output_frames')
+        output_combined_dir = os.path.join(self.video['video_metadata']['output_dir'], 'output_combined')
 
         combined_frames = sorted(
             [os.path.join(output_combined_dir, img_name) for img_name in os.listdir(output_combined_dir)])
@@ -58,10 +58,11 @@ class Backend:
             os.remove(output_paths['video_path'])
         if os.path.exists(output_paths['zip_path']):
             os.remove(output_paths['zip_path'])
-        video_segments = {}
+
+
         predictor, inference_state, image_predictor = seg_tracker
         for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
-            video_segments[out_frame_idx] = {
+            self.algo_api.segment_masks[out_frame_idx] = {
                 out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
                 for i, out_obj_id in enumerate(out_obj_ids)
             }
@@ -73,8 +74,8 @@ class Backend:
             image = cv2.imread(frame_path)
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             masked_frame = image.copy()
-            if frame_idx in video_segments:
-                for obj_id, mask in video_segments[frame_idx].items():
+            if frame_idx in self.algo_api.segment_masks:
+                for obj_id, mask in self.algo_api.segment_masks[frame_idx].items():
                     masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
                     mask_output_path = os.path.join(output_paths['masks_dir'], f'{obj_id}_{frame_idx:07d}.png')
                     cv2.imwrite(mask_output_path, show_mask(mask))
@@ -175,10 +176,9 @@ class Backend:
 
     def toggle_segmentation(self, seg_tracker, frame_num, click_stack):
         points_dict, labels_dict = click_stack
-        predictor, inference_state, image_predictor = seg_tracker
 
         # Load the original image
-        image_path = f'output_frames/{frame_num:07d}.jpg'
+        image_path = os.path.join(self.video['video_metadata']['output_dir'], f'output_frames/{frame_num:07d}.jpg')
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
@@ -190,35 +190,14 @@ class Backend:
         else:
             # Return image with segmentation
             masked_frame = image.copy()
+            if frame_num in self.algo_api.segment_masks:
+                for obj_id in self.algo_api.segment_masks[frame_num]:
+                    mask = self.algo_api.segment_masks[frame_num][obj_id]
+                    masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
+
+            # Always draw markers
             if frame_num in points_dict and frame_num in labels_dict:
-                try:
-                    # Try to get the last valid inference state
-                    for obj_id in points_dict[frame_num]:
-                        if len(points_dict[frame_num][obj_id]) > 0:
-                            # Store the current inference state
-                            current_inference_state = inference_state
-
-                            frame_idx, out_obj_ids, out_mask_logits = predictor.add_new_points(
-                                inference_state=current_inference_state,
-                                frame_idx=frame_num,
-                                obj_id=obj_id,
-                                points=points_dict[frame_num][obj_id],
-                                labels=labels_dict[frame_num][obj_id],
-                            )
-
-                            # Only update if we got valid masks
-                            if out_mask_logits is not None and len(out_mask_logits) > 0:
-                                for i, obj_id in enumerate(out_obj_ids):
-                                    mask = (out_mask_logits[i] > 0.0).cpu().numpy()
-                                    masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
-
-                    # Always draw markers
-                    masked_frame = draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
-
-                except Exception as e:
-                    print(f"Error during segmentation: {e}")
-                    # If segmentation fails, at least show the points
-                    masked_frame = draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
+                masked_frame = draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
 
         # Toggle state for next click
         self.segmentation_state = not self.segmentation_state
@@ -405,7 +384,10 @@ class Backend:
         return self.algo_api.sam_stroke(seg_tracker, drawing_board, last_draw, frame_num, ann_obj_id)
 
     def get_meta_from_video(self, seg_tracker, input_video, scale_slider, checkpoint):
-        return self.algo_api.get_meta_from_video(seg_tracker, input_video, scale_slider, checkpoint)
+        output_paths, first_frame_rgb = get_meta_from_video(self, input_video, scale_slider)
+        seg_tracker, click_stack, num_frames = self.algo_api.initialize_sam(seg_tracker, checkpoint, output_paths)
+        return (seg_tracker, click_stack, first_frame_rgb, first_frame_rgb, None, None, None, 0,
+                gr.Slider.update(maximum=num_frames, value=0))
 
     def sam_click(self, seg_tracker, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
         return self.algo_api.sam_click(seg_tracker, frame_num, point_mode, click_stack, ann_obj_id, evt)

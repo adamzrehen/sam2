@@ -7,12 +7,6 @@ import hashlib
 import matplotlib.pyplot as plt
 
 
-def clear_folder(folder_path):
-    if os.path.exists(folder_path):
-        shutil.rmtree(folder_path)
-    os.makedirs(folder_path)
-
-
 def mask2bbox(mask):
     if len(np.where(mask > 0)[0]) == 0:
         print(f'not mask')
