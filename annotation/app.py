@@ -215,6 +215,7 @@ def seg_track_app():
             inputs=[
                 frame_num,
                 seg_input_video,
+                click_stack,
             ],
             outputs=[
                 input_first_frame,

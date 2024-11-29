@@ -139,7 +139,7 @@ class AlgoAPI:
         last_draw = drawing_board["mask"]
         return masked_with_rect, masked_with_rect, last_draw
 
-    def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData, video):
+    def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
         points_dict, labels_dict = click_stack
         predictor, inference_state, image_predictor = self.seg_tracker
         ann_frame_idx = frame_num  # the frame index we interact with
@@ -161,23 +161,5 @@ class AlgoAPI:
 
         click_stack = (points_dict, labels_dict)
 
-        frame_idx, out_obj_ids, out_mask_logits = predictor.add_new_points(
-            inference_state=inference_state,
-            frame_idx=ann_frame_idx,
-            obj_id=ann_obj_id,
-            points=points_dict[ann_frame_idx][ann_obj_id],
-            labels=labels_dict[ann_frame_idx][ann_obj_id],
-            clear_old_points=True,
-        )
-
-        image_path = os.path.join(video['video_metadata']['output_dir'], f'output_frames/{ann_frame_idx:07d}.jpg')
-        image = cv2.imread(image_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        masked_frame = image.copy()
-        for i, obj_id in enumerate(out_obj_ids):
-            mask = (out_mask_logits[i] > 0.0).cpu().numpy()
-            masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
-        masked_frame_with_markers = draw_markers(masked_frame, points_dict[ann_frame_idx], labels_dict[ann_frame_idx])
-
-        return masked_frame_with_markers, masked_frame_with_markers, click_stack
+        self.add_points(click_stack)
+        return click_stack

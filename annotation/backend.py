@@ -18,7 +18,7 @@ class Backend:
         self.config = config
         self.algo_api = AlgoAPI(base_dir=self.base_dir, config=self.config)
         self.video = {}
-        self.segmentation_state = False
+        self.segmentation_state = True
         self.segment_id = 0
 
     def show_res_by_slider(self, frame_per, click_stack):
@@ -38,16 +38,10 @@ class Backend:
             print("No output results found")
             return None, None
         else:
-            chosen_frame_path = output_masked_frame_path[frame_per]
-            print(f"{chosen_frame_path}")
-            chosen_frame_show = cv2.imread(chosen_frame_path)
-            chosen_frame_show = cv2.cvtColor(chosen_frame_show, cv2.COLOR_BGR2RGB)
-            points_dict, labels_dict = click_stack
-            if frame_per in points_dict and frame_per in labels_dict:
-                chosen_frame_show = draw_markers(chosen_frame_show, points_dict[frame_per], labels_dict[frame_per])
-            return chosen_frame_show, chosen_frame_show, frame_per
+            masked_frame = self.get_masked_frame(frame_per, click_stack)
+            return masked_frame, masked_frame, frame_per
 
-    def tracking_objects(self, frame_num, input_video):
+    def tracking_objects(self, frame_num, input_video, click_stack):
         output_keys = ['frames_dir', 'masks_dir', 'combined_dir', 'video_path',
                        'zip_path']
         output_paths = {key: os.path.join(self.base_dir, self.video['video_metadata']['output_dir'], self.config[key])
@@ -61,21 +55,13 @@ class Backend:
         if os.path.exists(output_paths['zip_path']):
             os.remove(output_paths['zip_path'])
 
-        # Track, update segmentation masks
+        # Track and update segmentation masks
         self.algo_api.propagate()
 
         frame_files = sorted([f for f in os.listdir(output_paths['frames_dir']) if f.endswith('.jpg')])
-        for frame_file in frame_files:
+        for frame_id, frame_file in enumerate(frame_files):
             frame_idx = int(os.path.splitext(frame_file)[0])
-            frame_path = os.path.join(output_paths['frames_dir'], frame_file)
-            image = cv2.imread(frame_path)
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            masked_frame = image.copy()
-            if frame_idx in self.algo_api.segment_masks:
-                for obj_id, mask in self.algo_api.segment_masks[frame_idx].items():
-                    masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
-                    mask_output_path = os.path.join(output_paths['masks_dir'], f'{obj_id}_{frame_idx:07d}.png')
-                    cv2.imwrite(mask_output_path, show_mask(mask))
+            masked_frame = self.get_masked_frame(frame_id, click_stack, mask_dir=output_paths['masks_dir'])
             combined_output_path = os.path.join(output_paths['combined_dir'], f'{frame_idx:07d}.png')
             combined_image_bgr = cv2.cvtColor(masked_frame, cv2.COLOR_RGB2BGR)
             cv2.imwrite(combined_output_path, combined_image_bgr)
@@ -114,21 +100,9 @@ class Backend:
                     points_dict[frame_num][obj_id] = points_dict[frame_num][obj_id][:-1]
                     labels_dict[frame_num][obj_id] = labels_dict[frame_num][obj_id][:-1]
 
-        # Redraw the frame with updated points
-        image_path = os.path.join(self.video['video_metadata']['output_dir'], f'output_frames/{frame_num:07d}.jpg')
-        image = cv2.imread(image_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
         # Redraw existing masks if any
-        masked_frame = image.copy()
         self.algo_api.add_points((points_dict, labels_dict))
-        if frame_num in self.algo_api.segment_masks:
-            for obj_id in self.algo_api.segment_masks[frame_num]:
-                mask = self.algo_api.segment_masks[frame_num][obj_id]
-                masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
-
-        if frame_num in points_dict and frame_num in labels_dict:
-            masked_frame = draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
+        masked_frame = self.get_masked_frame(frame_num, click_stack)
 
         return masked_frame, masked_frame, (points_dict, labels_dict)
 
@@ -160,31 +134,7 @@ class Backend:
         return x, y
 
     def toggle_segmentation(self, frame_num, click_stack):
-        points_dict, labels_dict = click_stack
-
-        # Load the original image
-        image_path = os.path.join(self.video['video_metadata']['output_dir'], f'output_frames/{frame_num:07d}.jpg')
-        image = cv2.imread(image_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        if self.segmentation_state:
-            # Return clean image but keep points visible
-            masked_frame = image.copy()
-            if frame_num in points_dict:
-                masked_frame = draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
-        else:
-            # Return image with segmentation
-            masked_frame = image.copy()
-            if frame_num in self.algo_api.segment_masks:
-                for obj_id in self.algo_api.segment_masks[frame_num]:
-                    mask = self.algo_api.segment_masks[frame_num][obj_id]
-                    masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
-
-            # Always draw markers
-            if frame_num in points_dict and frame_num in labels_dict:
-                masked_frame = draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
-
-        # Toggle state for next click
+        masked_frame = self.get_masked_frame(frame_num, click_stack)
         self.segmentation_state = not self.segmentation_state
         return masked_frame, masked_frame, click_stack
 
@@ -361,10 +311,31 @@ class Backend:
                 gr.Slider.update(maximum=num_frames, value=0))
 
     def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
-        (masked_frame_with_markers, masked_frame_with_markers,
-         click_stack) = self.algo_api.sam_click(frame_num, point_mode, click_stack, ann_obj_id, evt, self.video)
+        click_stack = self.algo_api.sam_click(frame_num, point_mode, click_stack, ann_obj_id, evt)
         save_click_stack(self, click_stack)
+        masked_frame_with_markers = self.get_masked_frame(frame_num, click_stack)
         return masked_frame_with_markers, masked_frame_with_markers, click_stack
 
     def clean(self):
         return self.algo_api.clean()
+
+    def get_masked_frame(self, frame_num, click_stack, mask_dir=None):
+        image_path = os.path.join(self.video['video_metadata']['output_dir'], f'output_frames/{frame_num:07d}.jpg')
+        image = cv2.imread(image_path)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        masked_frame = image.copy()
+
+        if not self.segmentation_state:
+            if frame_num in self.algo_api.segment_masks:
+                for obj_id in self.algo_api.segment_masks[frame_num]:
+                    mask = self.algo_api.segment_masks[frame_num][obj_id]
+                    masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
+                    if mask_dir is not None:
+                        mask_output_path = os.path.join(mask_dir, f'{obj_id}_{frame_num:07d}.png')
+                        cv2.imwrite(mask_output_path, masked_frame)
+
+        # Always draw markers
+        points_dict, labels_dict = click_stack
+        if frame_num in points_dict and frame_num in labels_dict:
+            masked_frame = draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
+        return masked_frame
