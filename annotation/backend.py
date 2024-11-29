@@ -303,11 +303,12 @@ class Backend:
     def sam_stroke(self, drawing_board, last_draw, frame_num, ann_obj_id):
         return self.algo_api.sam_stroke(drawing_board, last_draw, frame_num, ann_obj_id)
 
-    def get_meta_from_video(self, input_video, scale_slider, checkpoint):
+    def preprocess_video(self, input_video, scale_slider, checkpoint):
         output_paths, first_frame_rgb = get_meta_from_video(self, input_video, scale_slider)
         click_stack = load_click_stack(self)
         click_stack, num_frames = self.algo_api.initialize_sam(checkpoint, output_paths, click_stack)
-        return (click_stack, first_frame_rgb, first_frame_rgb, None, None, None, 0,
+        masked_frame = self.get_masked_frame(0, click_stack)
+        return (click_stack, masked_frame, masked_frame, None, None, None, 0,
                 gr.Slider.update(maximum=num_frames, value=0))
 
     def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
@@ -338,7 +339,7 @@ class Backend:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         masked_frame = image.copy()
 
-        if not self.segmentation_state:
+        if self.segmentation_state:
             if frame_num in self.algo_api.segment_masks:
                 for obj_id in self.algo_api.segment_masks[frame_num]:
                     mask = self.algo_api.segment_masks[frame_num][obj_id]
