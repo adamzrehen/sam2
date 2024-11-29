@@ -59,13 +59,9 @@ class Backend:
         if os.path.exists(output_paths['zip_path']):
             os.remove(output_paths['zip_path'])
 
+        # Track
+        self.algo_api.propagate()
 
-        predictor, inference_state, image_predictor = self.seg_tracker
-        for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
-            self.algo_api.segment_masks[out_frame_idx] = {
-                out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
-                for i, out_obj_id in enumerate(out_obj_ids)
-            }
         frame_files = sorted([f for f in os.listdir(output_paths['frames_dir']) if f.endswith('.jpg')])
         # for frame_idx in sorted(video_segments.keys()):
         for frame_file in frame_files:

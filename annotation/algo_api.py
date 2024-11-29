@@ -112,6 +112,14 @@ class AlgoAPI:
                         for i, out_obj_id in enumerate(out_obj_ids)
                     }
 
+    def propagate(self):
+        predictor, inference_state, image_predictor = self.seg_tracker
+        for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
+            self.segment_masks[out_frame_idx] = {
+                out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+                for i, out_obj_id in enumerate(out_obj_ids)
+            }
+
     @staticmethod
     def pack_to_tuple(nested_dict):
         coords_dict, labels_dict = {}, {}
