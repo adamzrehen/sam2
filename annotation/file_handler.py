@@ -2,6 +2,7 @@ import os
 import shutil
 import cv2
 import ffmpeg
+import pickle
 
 
 def clear_folder(folder_path):
@@ -89,3 +90,36 @@ def get_meta_from_video(self, input_video, scale_slider):
     first_frame = cv2.imread(first_frame_path)
     first_frame_rgb = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
     return output_paths, first_frame_rgb
+
+
+def save_click_stack(self, click_stack):
+    segment_name = os.path.basename(self.video['segments'][self.segment_id]['path'].split('.mp4')[0])
+    output_path = os.path.join(self.base_dir, 'data/sam2', self.video['video_metadata']['video_name'],
+                               f'segments/click_stack_{segment_name}' + '.pkl')
+    with open(output_path, 'wb') as file:
+        pickle.dump(click_stack, file)
+
+
+def load_click_stack(self):
+    segment_name = os.path.basename(self.video['segments'][self.segment_id]['path'].split('.mp4')[0])
+    inference_state_path = os.path.join(self.base_dir,
+                                        os.path.dirname(self.video['segments'][self.segment_id]['path']),
+                                        f'click_stack_{segment_name}.pkl')
+    click_stack = ({}, {})
+    if os.path.exists(inference_state_path):
+        segment_name = os.path.basename(self.video['segments'][self.segment_id]['path'].split('.mp4')[0])
+        input_path = os.path.join(self.base_dir, 'data/sam2', self.video['video_metadata']['video_name'],
+                                  f'segments/click_stack_{segment_name}' + '.pkl')
+        with open(input_path, 'rb') as file:
+            click_stack = pickle.load(file)
+    return click_stack
+
+
+def load_existing_video_metadata(self, video_metadata):
+    try:
+        with open(os.path.join(self.base_dir, video_metadata["output_dir"],
+                                   f'{video_metadata["video_name"]}_meta.pkl'), 'rb') as file:
+            self.video = pickle.load(file)
+        return True
+    except Exception as e:
+        return False

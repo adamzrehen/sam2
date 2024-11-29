@@ -7,7 +7,8 @@ import ffmpeg
 import numpy as np
 import pickle
 from utils import draw_markers, show_mask, zip_folder
-from file_handler import clear_folder, get_meta_from_video
+from file_handler import (clear_folder, get_meta_from_video, load_click_stack, save_click_stack,
+                          load_existing_video_metadata)
 from algo_api import AlgoAPI
 
 
@@ -18,6 +19,7 @@ class Backend:
         self.algo_api = AlgoAPI(base_dir=self.base_dir, config=self.config)
         self.video = {}
         self.segmentation_state = False
+        self.segment_id = 0
 
     def show_res_by_slider(self, frame_per, click_stack):
         image_path = os.path.join(self.video['video_metadata']['output_dir'], 'output_frames')
@@ -59,11 +61,10 @@ class Backend:
         if os.path.exists(output_paths['zip_path']):
             os.remove(output_paths['zip_path'])
 
-        # Track
+        # Track, update segmentation masks
         self.algo_api.propagate()
 
         frame_files = sorted([f for f in os.listdir(output_paths['frames_dir']) if f.endswith('.jpg')])
-        # for frame_idx in sorted(video_segments.keys()):
         for frame_file in frame_files:
             frame_idx = int(os.path.splitext(frame_file)[0])
             frame_path = os.path.join(output_paths['frames_dir'], frame_file)
@@ -85,7 +86,6 @@ class Backend:
         fps = cap.get(cv2.CAP_PROP_FPS)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
-        # output_frames = int(total_frames * scale_slider)
         output_frames = len([name for name in os.listdir(output_paths['combined_dir']) if
                              os.path.isfile(os.path.join(output_paths['combined_dir'], name)) and name.endswith('.png')])
         out_fps = fps * output_frames / total_frames
@@ -106,9 +106,8 @@ class Backend:
         return input_first_frame
 
     def undo_last_point(self, frame_num, click_stack):
-        points_dict, labels_dict = click_stack
-
         # Remove the last point and its corresponding label
+        points_dict, labels_dict = click_stack
         if frame_num in points_dict and frame_num in labels_dict:
             for obj_id in points_dict[frame_num]:
                 if len(points_dict[frame_num][obj_id]) > 0:
@@ -191,10 +190,7 @@ class Backend:
 
     @staticmethod
     def split_video(video_path, video_name, output_dir, progress_callback=None, max_size_mb=20, max_frames=100):
-        """
-        Splits a video into smaller segments based on size or number of frames.
-        """
-        # Get video directory name from input path
+        # Splits a video into smaller segments based on size or number of frames.
         output_dir = os.path.join(output_dir, 'segments')
         os.makedirs(output_dir, exist_ok=True)
 
@@ -267,11 +263,11 @@ class Backend:
             return None, 0, None
 
     def handle_large_video_upload(self, file_path):
-        """Handle upload and splitting of large video file"""
         if file_path is None:
             return "No file uploaded", None, gr.Slider.update(), None
         if not os.path.exists(file_path.name):
             return f"ERROR File {file_path.name} does not exist", None, gr.Slider.update(), None
+
         file_size = os.path.getsize(file_path.name)
         if file_size < 0.2 * 1024 * 1024:
             return f"ERROR File {file_path.name} is too small", None, gr.Slider.update(), None
@@ -285,7 +281,7 @@ class Backend:
 
             status = False
             if os.path.exists(video_metadata["output_dir"]):
-                 status = self.load_existing_video_metadata(video_metadata)
+                 status = load_existing_video_metadata(self, video_metadata)
             if not status:
                 os.makedirs(video_metadata["output_dir"])
 
@@ -325,7 +321,6 @@ class Backend:
                     pickle.dump(self.video, file)
 
             if self.video['segments']:
-                self.algo_api.update_video(self.video)
                 yield (
                     "Processing complete. Select a segment to begin.",
                     self.video['segments'][0]['path'],
@@ -339,20 +334,9 @@ class Backend:
             print(f"Error processing upload: {e}")
             yield f"Error during upload: {str(e)}", None, gr.Slider.update(), None
 
-    def load_existing_video_metadata(self, video_metadata):
-        try:
-            with open(os.path.join(self.base_dir, video_metadata["output_dir"],
-                                       f'{video_metadata["video_name"]}_meta.pkl'), 'rb') as file:
-                self.video = pickle.load(file)
-            return True
-        except Exception as e:
-            return False
-
     def load_video_segment(self, index):
-        """Load a specific segment"""
-        print("DEBUG: load_video_segment called!")  # Basic debug print
         print(f"DEBUG: index={index}, segments={self.video['paths']}")
-        self.algo_api.update_segment_id(index)
+        self.segment_id = index
         return self.video['paths'][index - 1]
 
     def increment_video_index(self, current_index):
@@ -371,12 +355,16 @@ class Backend:
 
     def get_meta_from_video(self, input_video, scale_slider, checkpoint):
         output_paths, first_frame_rgb = get_meta_from_video(self, input_video, scale_slider)
-        click_stack, num_frames = self.algo_api.initialize_sam(checkpoint, output_paths)
+        click_stack = load_click_stack(self)
+        click_stack, num_frames = self.algo_api.initialize_sam(checkpoint, output_paths, click_stack)
         return (click_stack, first_frame_rgb, first_frame_rgb, None, None, None, 0,
                 gr.Slider.update(maximum=num_frames, value=0))
 
     def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
-        return self.algo_api.sam_click(frame_num, point_mode, click_stack, ann_obj_id, evt)
+        (masked_frame_with_markers, masked_frame_with_markers,
+         click_stack) = self.algo_api.sam_click(frame_num, point_mode, click_stack, ann_obj_id, evt, self.video)
+        save_click_stack(self, click_stack)
+        return masked_frame_with_markers, masked_frame_with_markers, click_stack
 
     def clean(self):
         return self.algo_api.clean()

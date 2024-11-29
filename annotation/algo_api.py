@@ -4,7 +4,6 @@ import os
 import cv2
 import numpy as np
 import gradio as gr
-import pickle
 from utils import mask2bbox, draw_rect, draw_markers, show_mask
 try:
     from sam2.build_sam import build_sam2
@@ -21,17 +20,8 @@ class AlgoAPI:
     def __init__(self, base_dir, config):
         self.base_dir = base_dir
         self.config = config
-        self.segment_id = None
-        self.video = None
         self.segment_masks = {}
         self.seg_tracker = None
-
-    def update_segment_id(self, segment_id):
-        self.segment_id = segment_id
-
-    def update_video(self, video):
-        self.video = video
-        self.segment_id = 0
 
     def clean(self):
         if self.seg_tracker is not None:
@@ -42,7 +32,7 @@ class AlgoAPI:
             torch.cuda.empty_cache()
         return None, ({}, {}), None, None, 0, None, None, None, 0
 
-    def initialize_sam(self, checkpoint, output_paths):
+    def initialize_sam(self, checkpoint, output_paths, click_stack):
         if not torch.cuda.is_available():
             return None
 
@@ -83,15 +73,8 @@ class AlgoAPI:
         predictor.reset_state(inference_state)
         num_frames = inference_state['images'].shape[0]
 
-        # Load existing point_inputs_per_obj if available
-        segment_name = os.path.basename(self.video['segments'][self.segment_id]['path'].split('.mp4')[0])
-        inference_state_path = os.path.join(self.base_dir,
-                                            os.path.dirname(self.video['segments'][self.segment_id]['path']),
-                                            f'click_stack_{segment_name}.pkl')
-        click_stack = ({}, {})
-        if os.path.exists(inference_state_path):
-            click_stack = self.load_click_stack()
-            self.add_points(click_stack)
+        # Add existing points
+        self.add_points(click_stack)
 
         return click_stack, num_frames
 
@@ -156,7 +139,7 @@ class AlgoAPI:
         last_draw = drawing_board["mask"]
         return masked_with_rect, masked_with_rect, last_draw
 
-    def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
+    def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData, video):
         points_dict, labels_dict = click_stack
         predictor, inference_state, image_predictor = self.seg_tracker
         ann_frame_idx = frame_num  # the frame index we interact with
@@ -187,7 +170,7 @@ class AlgoAPI:
             clear_old_points=True,
         )
 
-        image_path = os.path.join(self.video['video_metadata']['output_dir'], f'output_frames/{ann_frame_idx:07d}.jpg')
+        image_path = os.path.join(video['video_metadata']['output_dir'], f'output_frames/{ann_frame_idx:07d}.jpg')
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
@@ -197,20 +180,4 @@ class AlgoAPI:
             masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
         masked_frame_with_markers = draw_markers(masked_frame, points_dict[ann_frame_idx], labels_dict[ann_frame_idx])
 
-        self.save_click_stack(click_stack)
         return masked_frame_with_markers, masked_frame_with_markers, click_stack
-
-    def save_click_stack(self, click_stack):
-        segment_name = os.path.basename(self.video['segments'][self.segment_id]['path'].split('.mp4')[0])
-        output_path = os.path.join(self.base_dir, 'data/sam2', self.video['video_metadata']['video_name'],
-                                   f'segments/click_stack_{segment_name}' + '.pkl')
-        with open(output_path, 'wb') as file:
-            pickle.dump(click_stack, file)
-
-    def load_click_stack(self):
-        segment_name = os.path.basename(self.video['segments'][self.segment_id]['path'].split('.mp4')[0])
-        input_path = os.path.join(self.base_dir, 'data/sam2', self.video['video_metadata']['video_name'],
-                                  f'segments/click_stack_{segment_name}' + '.pkl')
-        with open(input_path, 'rb') as file:
-            click_stack = pickle.load(file)
-        return click_stack
