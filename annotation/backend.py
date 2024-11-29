@@ -45,7 +45,7 @@ class Backend:
                 chosen_frame_show = draw_markers(chosen_frame_show, points_dict[frame_per], labels_dict[frame_per])
             return chosen_frame_show, chosen_frame_show, frame_per
 
-    def tracking_objects(self, seg_tracker, frame_num, input_video):
+    def tracking_objects(self, frame_num, input_video):
         output_keys = ['frames_dir', 'masks_dir', 'combined_dir', 'video_path',
                        'zip_path']
         output_paths = {key: os.path.join(self.base_dir, self.video['video_metadata']['output_dir'], self.config[key])
@@ -60,7 +60,7 @@ class Backend:
             os.remove(output_paths['zip_path'])
 
 
-        predictor, inference_state, image_predictor = seg_tracker
+        predictor, inference_state, image_predictor = self.seg_tracker
         for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
             self.algo_api.segment_masks[out_frame_idx] = {
                 out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
@@ -109,43 +109,33 @@ class Backend:
     def drawing_board_get_input_first_frame(input_first_frame):
         return input_first_frame
 
-    @staticmethod
-    def undo_last_point(seg_tracker, frame_num, click_stack):
+    def undo_last_point(self, frame_num, click_stack):
         points_dict, labels_dict = click_stack
 
+        # Remove the last point and its corresponding label
         if frame_num in points_dict and frame_num in labels_dict:
             for obj_id in points_dict[frame_num]:
                 if len(points_dict[frame_num][obj_id]) > 0:
-                    # Remove the last point and its corresponding label
                     points_dict[frame_num][obj_id] = points_dict[frame_num][obj_id][:-1]
                     labels_dict[frame_num][obj_id] = labels_dict[frame_num][obj_id][:-1]
 
         # Redraw the frame with updated points
-        image_path = f'output_frames/{frame_num:07d}.jpg'
+        image_path = os.path.join(self.video['video_metadata']['output_dir'], f'output_frames/{frame_num:07d}.jpg')
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        masked_frame = image.copy()
         # Redraw existing masks if any
-        predictor, inference_state, image_predictor = seg_tracker
-        if frame_num in points_dict and points_dict[frame_num]:
-            for obj_id in points_dict[frame_num]:
-                if len(points_dict[frame_num][obj_id]) > 0:
-                    frame_idx, out_obj_ids, out_mask_logits = predictor.add_new_points(
-                        inference_state=inference_state,
-                        frame_idx=frame_num,
-                        obj_id=obj_id,
-                        points=points_dict[frame_num][obj_id],
-                        labels=labels_dict[frame_num][obj_id],
-                    )
-                    for i, obj_id in enumerate(out_obj_ids):
-                        mask = (out_mask_logits[i] > 0.0).cpu().numpy()
-                        masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
+        masked_frame = image.copy()
+        self.algo_api.add_points((points_dict, labels_dict))
+        if frame_num in self.algo_api.segment_masks:
+            for obj_id in self.algo_api.segment_masks[frame_num]:
+                mask = self.algo_api.segment_masks[frame_num][obj_id]
+                masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
 
         if frame_num in points_dict and frame_num in labels_dict:
             masked_frame = draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
 
-        return seg_tracker, masked_frame, masked_frame, (points_dict, labels_dict)
+        return masked_frame, masked_frame, (points_dict, labels_dict)
 
     @staticmethod
     def zoom_to_last_point(frame_num, click_stack):
@@ -174,7 +164,7 @@ class Backend:
             x, y = w / 2, h / 2
         return x, y
 
-    def toggle_segmentation(self, seg_tracker, frame_num, click_stack):
+    def toggle_segmentation(self, frame_num, click_stack):
         points_dict, labels_dict = click_stack
 
         # Load the original image
@@ -201,7 +191,7 @@ class Backend:
 
         # Toggle state for next click
         self.segmentation_state = not self.segmentation_state
-        return seg_tracker, masked_frame, masked_frame, click_stack
+        return masked_frame, masked_frame, click_stack
 
     @staticmethod
     def split_video(video_path, video_name, output_dir, progress_callback=None, max_size_mb=20, max_frames=100):
@@ -380,17 +370,17 @@ class Backend:
         """Decrement video index while staying within bounds"""
         return max(1, current_index - 1)
 
-    def sam_stroke(self, seg_tracker, drawing_board, last_draw, frame_num, ann_obj_id):
-        return self.algo_api.sam_stroke(seg_tracker, drawing_board, last_draw, frame_num, ann_obj_id)
+    def sam_stroke(self, drawing_board, last_draw, frame_num, ann_obj_id):
+        return self.algo_api.sam_stroke(drawing_board, last_draw, frame_num, ann_obj_id)
 
-    def get_meta_from_video(self, seg_tracker, input_video, scale_slider, checkpoint):
+    def get_meta_from_video(self, input_video, scale_slider, checkpoint):
         output_paths, first_frame_rgb = get_meta_from_video(self, input_video, scale_slider)
-        seg_tracker, click_stack, num_frames = self.algo_api.initialize_sam(seg_tracker, checkpoint, output_paths)
-        return (seg_tracker, click_stack, first_frame_rgb, first_frame_rgb, None, None, None, 0,
+        click_stack, num_frames = self.algo_api.initialize_sam(checkpoint, output_paths)
+        return (click_stack, first_frame_rgb, first_frame_rgb, None, None, None, 0,
                 gr.Slider.update(maximum=num_frames, value=0))
 
-    def sam_click(self, seg_tracker, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
-        return self.algo_api.sam_click(seg_tracker, frame_num, point_mode, click_stack, ann_obj_id, evt)
+    def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
+        return self.algo_api.sam_click(frame_num, point_mode, click_stack, ann_obj_id, evt)
 
-    def clean(self, seg_tracker):
-        return self.algo_api.clean(seg_tracker)
+    def clean(self):
+        return self.algo_api.clean()

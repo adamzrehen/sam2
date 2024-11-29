@@ -41,7 +41,6 @@ def seg_track_app():
         )
 
         click_stack = gr.State(({}, {}))
-        seg_tracker = gr.State(None)
         frame_num = gr.State(value=(int(0)))
         ann_obj_id = gr.State(value=(int(0)))
         last_draw = gr.State(None)
@@ -158,8 +157,8 @@ def seg_track_app():
                                 input_first_frame, drawing_board, frame_num
                             ]
                         ).then(fn=backend.toggle_segmentation,
-                               inputs=[seg_tracker, frame_num, click_stack],
-                               outputs=[seg_tracker, input_first_frame, drawing_board, click_stack])
+                               inputs=[frame_num, click_stack],
+                               outputs=[input_first_frame, drawing_board, click_stack])
 
                         new_object_button = gr.Button(
                             value="Add New Object",
@@ -192,21 +191,21 @@ def seg_track_app():
         # listen to the preprocess button click to get the first frame of video with scaling
         preprocess_button.click(
             fn=backend.get_meta_from_video,
-            inputs=[seg_tracker, seg_input_video, scale_slider, checkpoint],
-            outputs=[seg_tracker, click_stack, input_first_frame, drawing_board, output_video, output_mp4,
+            inputs=[seg_input_video, scale_slider, checkpoint],
+            outputs=[click_stack, input_first_frame, drawing_board, output_video, output_mp4,
                 output_mask, ann_obj_id, frame_per]
         ).then(fn=backend.toggle_segmentation,
-            inputs=[seg_tracker, frame_num, click_stack],
-            outputs=[seg_tracker, input_first_frame, drawing_board, click_stack])
+            inputs=[frame_num, click_stack],
+            outputs=[input_first_frame, drawing_board, click_stack])
 
         # Interactively modify the mask acc click
         input_first_frame.select(
             fn=backend.sam_click,
             inputs=[
-                seg_tracker, frame_num, point_mode, click_stack, ann_obj_id
+                frame_num, point_mode, click_stack, ann_obj_id
             ],
             outputs=[
-                seg_tracker, input_first_frame, drawing_board, click_stack
+                input_first_frame, drawing_board, click_stack
             ]
         )
 
@@ -214,7 +213,6 @@ def seg_track_app():
         track_for_video.click(
             fn=backend.tracking_objects,
             inputs=[
-                seg_tracker,
                 frame_num,
                 seg_input_video,
             ],
@@ -229,11 +227,9 @@ def seg_track_app():
 
         reset_button.click(
             fn=backend.clean,
-            inputs=[
-                seg_tracker
-            ],
+            inputs=[],
             outputs=[
-                seg_tracker, click_stack, input_first_frame, drawing_board, frame_per, output_video, output_mp4,
+                click_stack, input_first_frame, drawing_board, frame_per, output_video, output_mp4,
                 output_mask, ann_obj_id
             ]
         )
@@ -257,22 +253,20 @@ def seg_track_app():
         seg_acc_stroke.click(
             fn=backend.sam_stroke,
             inputs=[
-                seg_tracker, drawing_board, last_draw, frame_num, ann_obj_id
+                drawing_board, last_draw, frame_num, ann_obj_id
             ],
             outputs=[
-                seg_tracker, input_first_frame, drawing_board, last_draw
+                input_first_frame, drawing_board, last_draw
             ]
         )
 
         undo_point.click(
             fn=backend.undo_last_point,
             inputs=[
-                seg_tracker,
                 frame_num,
                 click_stack
             ],
             outputs=[
-                seg_tracker,
                 input_first_frame,
                 drawing_board,
                 click_stack
@@ -292,8 +286,8 @@ def seg_track_app():
 
         toggle_seg.click(
             fn=backend.toggle_segmentation,
-            inputs=[seg_tracker, frame_num, click_stack],
-            outputs=[seg_tracker, input_first_frame, drawing_board, click_stack]
+            inputs=[frame_num, click_stack],
+            outputs=[input_first_frame, drawing_board, click_stack]
         )
 
         # Event handlers

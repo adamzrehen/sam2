@@ -24,6 +24,7 @@ class AlgoAPI:
         self.segment_id = None
         self.video = None
         self.segment_masks = {}
+        self.seg_tracker = None
 
     def update_segment_id(self, segment_id):
         self.segment_id = segment_id
@@ -32,23 +33,21 @@ class AlgoAPI:
         self.video = video
         self.segment_id = 0
 
-    @staticmethod
-    def clean(seg_tracker):
-        if seg_tracker is not None:
-            predictor, inference_state, image_predictor = seg_tracker
+    def clean(self):
+        if self.seg_tracker is not None:
+            predictor, inference_state, image_predictor = self.seg_tracker
             predictor.reset_state(inference_state)
-            del predictor
-            del inference_state
-            del image_predictor
-            del seg_tracker
+            del predictor, inference_state, image_predictor, self.seg_tracker
             gc.collect()
             torch.cuda.empty_cache()
         return None, ({}, {}), None, None, 0, None, None, None, 0
 
-    def initialize_sam(self, seg_tracker, checkpoint, output_paths):
-        if seg_tracker is not None:
-            del seg_tracker
-            seg_tracker = None
+    def initialize_sam(self, checkpoint, output_paths):
+        if not torch.cuda.is_available():
+            return None
+
+        if self.seg_tracker is not None:
+            del self.seg_tracker
             gc.collect()
             torch.cuda.empty_cache()
         torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
@@ -77,10 +76,10 @@ class AlgoAPI:
                                                  f"checkpoint/")
         predictor = build_sam2_video_predictor(model_cfg, sam2_checkpoint, device="cuda")
         sam2_model = build_sam2(model_cfg, sam2_checkpoint, device="cuda")
-
         image_predictor = SAM2ImagePredictor(sam2_model)
-
         inference_state = predictor.init_state(video_path=output_paths['frames_dir'])
+
+        self.seg_tracker = (predictor, inference_state, image_predictor)
         predictor.reset_state(inference_state)
         num_frames = inference_state['images'].shape[0]
 
@@ -92,12 +91,13 @@ class AlgoAPI:
         click_stack = ({}, {})
         if os.path.exists(inference_state_path):
             click_stack = self.load_click_stack()
-            predictor = self.initialize_predictor(inference_state, predictor, click_stack)
+            self.add_points(click_stack)
 
-        return (predictor, inference_state, image_predictor), click_stack, num_frames
+        return click_stack, num_frames
 
-    def initialize_predictor(self, inference_state, predictor, click_stack):
+    def add_points(self, click_stack):
         points_dict, labels_dict = click_stack
+        predictor, inference_state, image_predictor = self.seg_tracker
         for frame_num, vals in points_dict.items():
                 for obj_id in vals.keys():
                     frame_idx, out_obj_ids, out_mask_logits = predictor.add_new_points(
@@ -111,7 +111,6 @@ class AlgoAPI:
                         out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
                         for i, out_obj_id in enumerate(out_obj_ids)
                     }
-        return predictor
 
     @staticmethod
     def pack_to_tuple(nested_dict):
@@ -124,9 +123,8 @@ class AlgoAPI:
                 labels_dict[key][subkey] = data['point_labels'][0].cpu().numpy()
         return coords_dict, labels_dict
 
-    @staticmethod
-    def sam_stroke(seg_tracker, drawing_board, last_draw, frame_num, ann_obj_id):
-        predictor, inference_state, image_predictor = seg_tracker
+    def sam_stroke(self, drawing_board, last_draw, frame_num, ann_obj_id):
+        predictor, inference_state, image_predictor = self.seg_tracker
         image_path = f'output_frames/{frame_num:07d}.jpg'
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -139,7 +137,7 @@ class AlgoAPI:
             input_mask = diff_mask
         bbox, hasMask = mask2bbox(input_mask[:, :, 0])
         if not hasMask:
-            return seg_tracker, display_image, display_image
+            return display_image, display_image
         masks, scores, logits = image_predictor.predict(point_coords=None, point_labels=None, box=bbox[None, :],
                                                         multimask_output=False, )
         mask = masks > 0.0
@@ -148,11 +146,11 @@ class AlgoAPI:
         frame_idx, object_ids, masks = predictor.add_new_mask(inference_state, frame_idx=frame_num, obj_id=ann_obj_id,
                                                               mask=mask[0])
         last_draw = drawing_board["mask"]
-        return seg_tracker, masked_with_rect, masked_with_rect, last_draw
+        return masked_with_rect, masked_with_rect, last_draw
 
-    def sam_click(self, seg_tracker, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
+    def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
         points_dict, labels_dict = click_stack
-        predictor, inference_state, image_predictor = seg_tracker
+        predictor, inference_state, image_predictor = self.seg_tracker
         ann_frame_idx = frame_num  # the frame index we interact with
         point = np.array([[evt.index[0], evt.index[1]]], dtype=np.float32)
         label = np.array([1], np.int32) if point_mode == "Positive" else np.array([0], np.int32)
@@ -181,7 +179,7 @@ class AlgoAPI:
             clear_old_points=True,
         )
 
-        image_path = f'output_frames/{ann_frame_idx:07d}.jpg'
+        image_path = os.path.join(self.video['video_metadata']['output_dir'], f'output_frames/{ann_frame_idx:07d}.jpg')
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
@@ -192,7 +190,7 @@ class AlgoAPI:
         masked_frame_with_markers = draw_markers(masked_frame, points_dict[ann_frame_idx], labels_dict[ann_frame_idx])
 
         self.save_click_stack(click_stack)
-        return seg_tracker, masked_frame_with_markers, masked_frame_with_markers, click_stack
+        return masked_frame_with_markers, masked_frame_with_markers, click_stack
 
     def save_click_stack(self, click_stack):
         segment_name = os.path.basename(self.video['segments'][self.segment_id]['path'].split('.mp4')[0])
