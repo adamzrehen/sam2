@@ -2,16 +2,13 @@ import torch
 import gc
 import os
 import cv2
-import numpy as np
-import gradio as gr
-from utils import mask2bbox, draw_rect, draw_markers, show_mask
+from utils import mask2bbox, draw_rect, show_mask
 try:
     from sam2.build_sam import build_sam2
 except ImportError:
     raise ImportError("Please install the SAM2 package. "
                       "See https://pypi.org/project/sam2/ and dpwnload MedSem weights")
 
-from sam2.utils.transforms import SAM2Transforms
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 from sam2.build_sam import build_sam2_video_predictor
 
@@ -138,28 +135,3 @@ class AlgoAPI:
                                                               mask=mask[0])
         last_draw = drawing_board["mask"]
         return masked_with_rect, masked_with_rect, last_draw
-
-    def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
-        points_dict, labels_dict = click_stack
-        predictor, inference_state, image_predictor = self.seg_tracker
-        ann_frame_idx = frame_num  # the frame index we interact with
-        point = np.array([[evt.index[0], evt.index[1]]], dtype=np.float32)
-        label = np.array([1], np.int32) if point_mode == "Positive" else np.array([0], np.int32)
-
-        if ann_frame_idx not in points_dict:
-            points_dict[ann_frame_idx] = {}
-        if ann_frame_idx not in labels_dict:
-            labels_dict[ann_frame_idx] = {}
-
-        if ann_obj_id not in points_dict[ann_frame_idx]:
-            points_dict[ann_frame_idx][ann_obj_id] = np.empty((0, 2), dtype=np.float32)
-        if ann_obj_id not in labels_dict[ann_frame_idx]:
-            labels_dict[ann_frame_idx][ann_obj_id] = np.empty((0,), dtype=np.int32)
-
-        points_dict[ann_frame_idx][ann_obj_id] = np.append(points_dict[ann_frame_idx][ann_obj_id], point, axis=0)
-        labels_dict[ann_frame_idx][ann_obj_id] = np.append(labels_dict[ann_frame_idx][ann_obj_id], label, axis=0)
-
-        click_stack = (points_dict, labels_dict)
-
-        self.add_points(click_stack)
-        return click_stack

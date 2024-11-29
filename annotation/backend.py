@@ -311,7 +311,20 @@ class Backend:
                 gr.Slider.update(maximum=num_frames, value=0))
 
     def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
-        click_stack = self.algo_api.sam_click(frame_num, point_mode, click_stack, ann_obj_id, evt)
+        points_dict, labels_dict = click_stack
+        ann_frame_idx = frame_num  # the frame index we interact with
+        point = np.array([[evt.index[0], evt.index[1]]], dtype=np.float32)
+        label = np.array([1], np.int32) if point_mode == "Positive" else np.array([0], np.int32)
+
+        # Initialize nested dictionaries and arrays using setdefault
+        points_dict.setdefault(ann_frame_idx, {}).setdefault(ann_obj_id, np.empty((0, 2), dtype=np.float32))
+        labels_dict.setdefault(ann_frame_idx, {}).setdefault(ann_obj_id, np.empty((0,), dtype=np.int32))
+
+        # Append new point and label
+        points_dict[ann_frame_idx][ann_obj_id] = np.append(points_dict[ann_frame_idx][ann_obj_id], point, axis=0)
+        labels_dict[ann_frame_idx][ann_obj_id] = np.append(labels_dict[ann_frame_idx][ann_obj_id], label, axis=0)
+
+        self.algo_api.add_points(click_stack)
         save_click_stack(self, click_stack)
         masked_frame_with_markers = self.get_masked_frame(frame_num, click_stack)
         return masked_frame_with_markers, masked_frame_with_markers, click_stack
