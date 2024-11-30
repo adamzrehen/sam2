@@ -79,8 +79,7 @@ class Backend:
                                                                                               vcodec='h264_nvenc',
                                                                                               pix_fmt='yuv420p').run()
         zip_folder(output_paths['masks_dir'], output_paths['zip_path'])
-        return (final_masked_frame, final_masked_frame, output_paths['video_path'], output_paths['video_path'],
-                output_paths['zip_path'])
+        return final_masked_frame, final_masked_frame
 
     @staticmethod
     def increment_ann_obj_id(ann_obj_id):
@@ -308,8 +307,7 @@ class Backend:
         click_stack = load_click_stack(self)
         click_stack, num_frames = self.algo_api.initialize_sam(checkpoint, output_paths, click_stack)
         masked_frame = self.get_masked_frame(0, click_stack)
-        return (click_stack, masked_frame, masked_frame, None, None, None, 0,
-                gr.Slider.update(maximum=num_frames, value=0))
+        return click_stack, masked_frame, masked_frame, 0, gr.Slider.update(maximum=num_frames, value=0)
 
     def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
         points_dict, labels_dict = click_stack

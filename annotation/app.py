@@ -1,5 +1,4 @@
 import os
-
 import gradio as gr
 import yaml
 from java_functions import return_java_function
@@ -150,12 +149,8 @@ def seg_track_app():
 
                         frame_per.change(
                             fn=backend.show_res_by_slider,
-                            inputs=[
-                                frame_per, click_stack
-                            ],
-                            outputs=[
-                                input_first_frame, drawing_board, frame_num
-                            ]
+                            inputs=[frame_per, click_stack],
+                            outputs=[input_first_frame, drawing_board, frame_num]
                         )
 
                         new_object_button = gr.Button(
@@ -171,12 +166,6 @@ def seg_track_app():
                             interactive=True,
                         )
 
-            # Right column - make it narrower with scale=0.3 (30% of width)
-            with gr.Column(scale=0.3):
-                output_video = gr.Video(label='Visualize Results', elem_id="input_output_video")
-                output_mp4 = gr.File(label="Predicted video")
-                output_mask = gr.File(label="Predicted masks")
-
         gr.Markdown(
             '''
             <div style="text-align:center; margin-top: 20px;">
@@ -190,84 +179,51 @@ def seg_track_app():
         preprocess_button.click(
             fn=backend.preprocess_video,
             inputs=[seg_input_video, scale_slider, checkpoint],
-            outputs=[click_stack, input_first_frame, drawing_board, output_video, output_mp4,
-                output_mask, ann_obj_id, frame_per]
+            outputs=[click_stack, input_first_frame, drawing_board, ann_obj_id, frame_per]
         )
 
         # Interactively modify the mask acc click
         input_first_frame.select(
             fn=backend.sam_click,
-            inputs=[
-                frame_num, point_mode, click_stack, ann_obj_id
-            ],
-            outputs=[
-                input_first_frame, drawing_board, click_stack
-            ]
+            inputs=[frame_num, point_mode, click_stack, ann_obj_id],
+            outputs=[input_first_frame, drawing_board, click_stack]
         )
 
         # Track object in video
         track_for_video.click(
             fn=backend.tracking_objects,
-            inputs=[
-                frame_num,
-                seg_input_video,
-                click_stack,
-            ],
-            outputs=[
-                input_first_frame,
-                drawing_board,
-                output_video,
-                output_mp4,
-                output_mask
-            ]
+            inputs=[frame_num, seg_input_video, click_stack],
+            outputs=[input_first_frame, drawing_board]
         )
 
         reset_button.click(
             fn=backend.clean,
             inputs=[],
-            outputs=[
-                click_stack, input_first_frame, drawing_board, frame_per, output_video, output_mp4,
-                output_mask, ann_obj_id
-            ]
+            outputs=[click_stack, input_first_frame, drawing_board, frame_per, ann_obj_id]
         )
 
         new_object_button.click(
             fn=backend.increment_ann_obj_id,
-            inputs=[
-                ann_obj_id
-            ],
-            outputs=[
-                ann_obj_id
-            ]
+            inputs=[ann_obj_id],
+            outputs=[ann_obj_id]
         )
 
         tab_stroke.select(
             fn=backend.drawing_board_get_input_first_frame,
-            inputs=[input_first_frame, ],
-            outputs=[drawing_board, ],
+            inputs=[input_first_frame],
+            outputs=[drawing_board],
         )
 
         seg_acc_stroke.click(
             fn=backend.sam_stroke,
-            inputs=[
-                drawing_board, last_draw, frame_num, ann_obj_id
-            ],
-            outputs=[
-                input_first_frame, drawing_board, last_draw
-            ]
+            inputs=[drawing_board, last_draw, frame_num, ann_obj_id],
+            outputs=[input_first_frame, drawing_board, last_draw]
         )
 
         undo_point.click(
             fn=backend.undo_last_point,
-            inputs=[
-                frame_num,
-                click_stack
-            ],
-            outputs=[
-                input_first_frame,
-                drawing_board,
-                click_stack
-            ]
+            inputs=[frame_num, click_stack],
+            outputs=[input_first_frame, drawing_board, click_stack]
         )
 
         # Add JavaScript for zoom functionality
