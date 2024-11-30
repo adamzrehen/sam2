@@ -46,7 +46,7 @@ def seg_track_app():
 
         with gr.Row():
             # Left column - make it wider with scale=0.7 (70% of width)
-            with gr.Column(scale=0.7):
+            with gr.Column(scale=1):
                 with gr.Row():
                     # New large video upload section
                     with gr.Group():
