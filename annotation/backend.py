@@ -39,7 +39,7 @@ class Backend:
             return None, None
         else:
             masked_frame = self.get_masked_frame(frame_per, click_stack)
-            return masked_frame, masked_frame, frame_per
+            return masked_frame, frame_per
 
     def tracking_objects(self, frame_num, input_video, click_stack):
         output_keys = ['frames_dir', 'masks_dir', 'combined_dir', 'video_path',
@@ -307,7 +307,7 @@ class Backend:
         click_stack = load_click_stack(self)
         click_stack, num_frames = self.algo_api.initialize_sam(checkpoint, output_paths, click_stack)
         masked_frame = self.get_masked_frame(0, click_stack)
-        return click_stack, masked_frame, masked_frame, 0, gr.Slider(maximum=num_frames - 1, value=0)
+        return click_stack, masked_frame, 0, gr.Slider(maximum=num_frames - 1, value=0)
 
     def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
         points_dict, labels_dict = click_stack
@@ -326,7 +326,7 @@ class Backend:
         self.algo_api.add_points(click_stack)
         save_click_stack(self, click_stack)
         masked_frame_with_markers = self.get_masked_frame(frame_num, click_stack)
-        return masked_frame_with_markers, masked_frame_with_markers, click_stack
+        return masked_frame_with_markers, click_stack
 
     def clean(self):
         return self.algo_api.clean()

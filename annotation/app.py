@@ -142,16 +142,6 @@ def seg_track_app():
                             step=1.0,
                             value=0.0,
                         )
-
-                        frame_per.change(fn=None, inputs=[], outputs=[],
-                                         js=return_java_function(java_input='frame_per'))
-
-                        frame_per.change(
-                            fn=backend.show_res_by_slider,
-                            inputs=[frame_per, click_stack],
-                            outputs=[input_first_frame, drawing_board, frame_num]
-                        )
-
                         new_object_button = gr.Button(
                             value="Add New Object",
                             interactive=True
@@ -174,18 +164,27 @@ def seg_track_app():
             </div>
                 '''
         )
-        # listen to the preprocess button click to get the first frame of video with scaling
+        frame_per.change(fn=None, inputs=[], outputs=[],
+                         js=return_java_function(java_input='frame_per'))
+
+        frame_per.change(
+            fn=backend.show_res_by_slider,
+            inputs=[frame_per, click_stack],
+            outputs=[input_first_frame, frame_num]
+        )
+
+        # Listen to the preprocess button click to get the first frame of video with scaling
         preprocess_button.click(
             fn=backend.preprocess_video,
             inputs=[seg_input_video, scale_slider, checkpoint],
-            outputs=[click_stack, input_first_frame, drawing_board, ann_obj_id, frame_per]
+            outputs=[click_stack, input_first_frame, ann_obj_id, frame_per]
         )
 
         # Interactively modify the mask acc click
         input_first_frame.select(
             fn=backend.sam_click,
             inputs=[frame_num, point_mode, click_stack, ann_obj_id],
-            outputs=[input_first_frame, drawing_board, click_stack]
+            outputs=[input_first_frame, click_stack]
         )
 
         # Track object in video
