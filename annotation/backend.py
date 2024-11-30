@@ -213,13 +213,13 @@ class Backend:
 
     def handle_large_video_upload(self, file_path):
         if file_path is None:
-            return "No file uploaded", None, gr.Slider.update(), None
+            return "No file uploaded", None, gr.Slider(), None
         if not os.path.exists(file_path.name):
-            return f"ERROR File {file_path.name} does not exist", None, gr.Slider.update(), None
+            return f"ERROR File {file_path.name} does not exist", None, gr.Slider(), None
 
         file_size = os.path.getsize(file_path.name)
         if file_size < 0.2 * 1024 * 1024:
-            return f"ERROR File {file_path.name} is too small", None, gr.Slider.update(), None
+            return f"ERROR File {file_path.name} is too small", None, gr.Slider(), None
 
         try:
             # Get original filename
@@ -241,9 +241,9 @@ class Backend:
 
                 if not os.path.exists(video_metadata["original_video_path"]):
                     return (f'ERROR Failed to move file {file_path.name} to {video_metadata["original_video_path"]}',
-                            None, gr.Slider.update(), None)
+                            None, gr.Slider(), None)
 
-                yield f"Upload complete. Processing video...", None, gr.Slider.update(), video_metadata
+                yield f"Upload complete. Processing video...", None, gr.Slider(), video_metadata
                 # Get initial video info
                 try:
                     video_metadata["probe"] = ffmpeg.probe(video_metadata["original_video_path"])
@@ -255,7 +255,7 @@ class Backend:
 
                 segment_infos, num_segments, metadata = self.split_video(
                     video_metadata["original_video_path"], video_metadata["video_name"], video_metadata["output_dir"],
-                    progress_callback=lambda x: (f"Splitting video: {x:.1f}%", None, gr.Slider.update(), None)
+                    progress_callback=lambda x: (f"Splitting video: {x:.1f}%", None, gr.Slider(), None)
                 )
                 self.video.update({
                     'video_metadata': video_metadata,
@@ -273,15 +273,15 @@ class Backend:
                 yield (
                     "Processing complete. Select a segment to begin.",
                     self.video['segments'][0]['path'],
-                    gr.Slider.update(maximum=self.video['metadata']['segments_created'], value=1),
+                    gr.Slider(maximum=self.video['metadata']['segments_created'], value=1),
                     self.video['metadata']
                 )
             else:
-                yield "Error: Failed to split video.", None, gr.Slider.update(), None
+                yield "Error: Failed to split video.", None, gr.Slider(), None
 
         except Exception as e:
             print(f"Error processing upload: {e}")
-            yield f"Error during upload: {str(e)}", None, gr.Slider.update(), None
+            yield f"Error during upload: {str(e)}", None, gr.Slider(), None
 
     def load_video_segment(self, index):
         print(f"DEBUG: index={index}, segments={self.video['paths']}")
@@ -307,7 +307,7 @@ class Backend:
         click_stack = load_click_stack(self)
         click_stack, num_frames = self.algo_api.initialize_sam(checkpoint, output_paths, click_stack)
         masked_frame = self.get_masked_frame(0, click_stack)
-        return click_stack, masked_frame, masked_frame, 0, gr.Slider.update(maximum=num_frames, value=0)
+        return click_stack, masked_frame, masked_frame, 0, gr.Slider(maximum=num_frames - 1, value=0)
 
     def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
         points_dict, labels_dict = click_stack

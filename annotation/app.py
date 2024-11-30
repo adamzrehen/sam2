@@ -52,8 +52,8 @@ def seg_track_app():
                     with gr.Group():
                         large_video_input = gr.File(
                             label="Upload Large Video",
-                            file_types=["mp4", "avi", "mov"],
-                            type="file"
+                            file_types=[".mp4", ".avi", ".mov"],
+                            type="filepath"
                         )
                         upload_status = gr.Textbox(label="Upload Status", interactive=False)
                         with gr.Row():
@@ -75,7 +75,6 @@ def seg_track_app():
                         seg_input_video = gr.Video(
                             label='Input video',
                             elem_id="input_output_video",
-                            type="filepath"  # Ensure we get the file path
                         )
                         with gr.Row():
                             checkpoint = gr.Dropdown(label="Model Size",
@@ -92,7 +91,7 @@ def seg_track_app():
 
                 with gr.Row():
                     # Put Point Prompt tab first and set selected=True
-                    tab_click = gr.Tab(label="Point Prompt", selected=True)
+                    tab_click = gr.Tab(label="Point Prompt")
                     with tab_click:
                         with gr.Row():
                             zoom_in = gr.Button("🔍 Zoom In")
@@ -125,12 +124,12 @@ def seg_track_app():
                     # Put Stroke to Box Prompt tab second
                     tab_stroke = gr.Tab(label="Stroke to Box Prompt")
                     with tab_stroke:
-                        drawing_board = gr.Image(
-                            label='Drawing Board',
-                            tool="sketch",
-                            brush_radius=10,
-                            interactive=True
-                        ).style(height=700)
+                        drawing_board = gr.Sketchpad(
+                            label="Drawing Board",
+                            interactive=True,
+                            height=700,
+                            width=700
+                        )
                         with gr.Row():
                             seg_acc_stroke = gr.Button(value="Segment", interactive=True)
 
@@ -145,7 +144,7 @@ def seg_track_app():
                         )
 
                         frame_per.change(fn=None, inputs=[], outputs=[],
-                                         _js=return_java_function(java_input='frame_per'))
+                                         js=return_java_function(java_input='frame_per'))
 
                         frame_per.change(
                             fn=backend.show_res_by_slider,
@@ -227,15 +226,15 @@ def seg_track_app():
         )
 
         # Add JavaScript for zoom functionality
-        zoom_in.click(fn=None, inputs=[], outputs=[], _js=return_java_function(java_input='zoom_in'))
-        zoom_out.click(fn=None, inputs=[], outputs=[], _js=return_java_function(java_input='zoom_out'))
-        reset_zoom.click(fn=None, inputs=[], outputs=[], _js=return_java_function(java_input='reset_zoom'))
+        zoom_in.click(fn=None, inputs=[], outputs=[], js=return_java_function(java_input='zoom_in'))
+        zoom_out.click(fn=None, inputs=[], outputs=[], js=return_java_function(java_input='zoom_out'))
+        reset_zoom.click(fn=None, inputs=[], outputs=[], js=return_java_function(java_input='reset_zoom'))
 
         # Add keyboard shortcuts
-        app.load(_js=return_java_function(java_input='keyboard_shortcuts'))
+        app.load(js=return_java_function(java_input='keyboard_shortcuts'))
 
         # Add this JavaScript to handle image dragging
-        app.load(_js=return_java_function(java_input='image_dragging'))
+        app.load(js=return_java_function(java_input='image_dragging'))
 
         toggle_seg.click(
             fn=backend.toggle_segmentation,
@@ -269,10 +268,9 @@ def seg_track_app():
             outputs=[video_index_slider]
         )
 
-    app.queue(concurrency_count=1)
+    app.queue()
     app.launch(
         debug=True,
-        enable_queue=True,
         share=True,
         server_port=7860,
         server_name="0.0.0.0",
