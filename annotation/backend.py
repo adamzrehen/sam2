@@ -103,7 +103,7 @@ class Backend:
         self.algo_api.add_points((points_dict, labels_dict))
         masked_frame = self.get_masked_frame(frame_num, click_stack)
 
-        return masked_frame, masked_frame, (points_dict, labels_dict)
+        return masked_frame, (points_dict, labels_dict)
 
     @staticmethod
     def zoom_to_last_point(frame_num, click_stack):
@@ -325,8 +325,14 @@ class Backend:
         masked_frame_with_markers = self.get_masked_frame(frame_num, click_stack)
         return masked_frame_with_markers, click_stack
 
-    def clean(self):
-        return self.algo_api.clean()
+    def clean(self, scale_slider, checkpoint):
+        self.algo_api.clean()
+        input_video = self.video['segments'][self.segment_id]['path']
+        output_paths, first_frame_rgb = get_meta_from_video(self, input_video, scale_slider)
+        click_stack = ({}, {})
+        click_stack, num_frames = self.algo_api.initialize_sam(checkpoint, output_paths, click_stack)
+        masked_frame = self.get_masked_frame(0, click_stack)
+        return click_stack, masked_frame, gr.Slider(maximum=num_frames - 1, value=0)
 
     def get_masked_frame(self, frame_num, click_stack, mask_dir=None):
         image_path = os.path.join(self.video['video_metadata']['output_dir'], f'output_frames/{frame_num:07d}.jpg')

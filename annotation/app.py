@@ -196,8 +196,8 @@ def seg_track_app(args):
 
         reset_button.click(
             fn=backend.clean,
-            inputs=[],
-            outputs=[click_stack, input_first_frame, drawing_board, frame_per]
+            inputs=[scale_slider, checkpoint],
+            outputs=[click_stack, input_first_frame, frame_per]
         )
 
         new_object_button.click(
@@ -221,7 +221,7 @@ def seg_track_app(args):
         undo_point.click(
             fn=backend.undo_last_point,
             inputs=[frame_num, click_stack],
-            outputs=[input_first_frame, drawing_board, click_stack]
+            outputs=[input_first_frame, click_stack]
         )
 
         # Add JavaScript for zoom functionality

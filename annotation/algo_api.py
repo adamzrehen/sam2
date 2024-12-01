@@ -21,13 +21,10 @@ class AlgoAPI:
         self.seg_tracker = None
 
     def clean(self):
-        if self.seg_tracker is not None:
-            predictor, inference_state, image_predictor = self.seg_tracker
-            predictor.reset_state(inference_state)
-            del predictor, inference_state, image_predictor, self.seg_tracker
-            gc.collect()
-            torch.cuda.empty_cache()
-        return None, ({}, {}), None, None, 0, 0
+        self.seg_tracker = None
+        gc.collect()
+        torch.cuda.empty_cache()
+        self.segment_masks = {}
 
     def initialize_sam(self, checkpoint, output_paths, click_stack):
         if not torch.cuda.is_available():
