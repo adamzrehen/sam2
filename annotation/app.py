@@ -194,9 +194,14 @@ def seg_track_app(args):
             outputs=[input_first_frame, drawing_board]
         )
 
-        reset_button.click(
+        # Confirm Dialog
+        reset_clicked_state = gr.Textbox(placeholder="subject", visible=False)
+        reset_button.click(None, inputs=[], outputs=reset_clicked_state,
+                           js=return_java_function(java_input='reset_dialog'))
+
+        reset_clicked_state.change(
             fn=backend.clean,
-            inputs=[scale_slider, checkpoint],
+            inputs=[reset_clicked_state, scale_slider, checkpoint, click_stack, input_first_frame, frame_per],
             outputs=[click_stack, input_first_frame, frame_per]
         )
 

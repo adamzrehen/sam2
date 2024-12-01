@@ -143,3 +143,10 @@ def return_java_function(java_input):
                                 return [];
                             }
                         """
+    elif java_input == 'reset_dialog':
+        return """
+        () => {
+            let response = confirm('Do you want to start cleaning?');
+            return [response ? 1 : 0]; // Return a list with 1 for OK, 0 for Cancel
+        }
+        """
