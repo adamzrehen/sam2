@@ -133,8 +133,8 @@ class Backend:
         return x, y
 
     def toggle_segmentation(self, frame_num, click_stack):
-        masked_frame = self.get_masked_frame(frame_num, click_stack)
         self.segmentation_state = not self.segmentation_state
+        masked_frame = self.get_masked_frame(frame_num, click_stack)
         return masked_frame, masked_frame, click_stack
 
     @staticmethod
