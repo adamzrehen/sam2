@@ -1,11 +1,12 @@
 import os
 import gradio as gr
 import yaml
+import argparse
 from java_functions import return_java_function
 from backend import Backend
 
 
-def seg_track_app():
+def seg_track_app(args):
     with open(os.path.join(os.path.dirname(__file__), 'config.yaml'), "r") as file:
         config = yaml.safe_load(file)  # safer alternative to yaml.load
 
@@ -18,7 +19,7 @@ def seg_track_app():
     """
 
     app = gr.Blocks(css=css)
-    backend = Backend(config)
+    backend = Backend(config, args.base_dir)
 
     with app:
         gr.Markdown(
@@ -41,7 +42,6 @@ def seg_track_app():
 
         click_stack = gr.State(({}, {}))
         frame_num = gr.State(value=(int(0)))
-        ann_obj_id = gr.State(value=(int(0)))
         last_draw = gr.State(None)
 
         with gr.Row():
@@ -168,7 +168,7 @@ def seg_track_app():
                          js=return_java_function(java_input='frame_per'))
 
         frame_per.change(
-            fn=backend.show_res_by_slider,
+            fn=backend.move_slider,
             inputs=[frame_per, click_stack],
             outputs=[input_first_frame, frame_num]
         )
@@ -176,34 +176,34 @@ def seg_track_app():
         # Listen to the preprocess button click to get the first frame of video with scaling
         preprocess_button.click(
             fn=backend.preprocess_video,
-            inputs=[seg_input_video, scale_slider, checkpoint],
-            outputs=[click_stack, input_first_frame, ann_obj_id, frame_per]
+            inputs=[scale_slider, checkpoint],
+            outputs=[click_stack, input_first_frame, frame_per]
         )
 
         # Interactively modify the mask acc click
         input_first_frame.select(
             fn=backend.sam_click,
-            inputs=[frame_num, point_mode, click_stack, ann_obj_id],
+            inputs=[frame_num, point_mode, click_stack],
             outputs=[input_first_frame, click_stack]
         )
 
         # Track object in video
         track_for_video.click(
             fn=backend.tracking_objects,
-            inputs=[frame_num, seg_input_video, click_stack],
+            inputs=[frame_num, click_stack],
             outputs=[input_first_frame, drawing_board]
         )
 
         reset_button.click(
             fn=backend.clean,
             inputs=[],
-            outputs=[click_stack, input_first_frame, drawing_board, frame_per, ann_obj_id]
+            outputs=[click_stack, input_first_frame, drawing_board, frame_per]
         )
 
         new_object_button.click(
             fn=backend.increment_ann_obj_id,
-            inputs=[ann_obj_id],
-            outputs=[ann_obj_id]
+            inputs=[],
+            outputs=[]
         )
 
         tab_stroke.select(
@@ -214,7 +214,7 @@ def seg_track_app():
 
         seg_acc_stroke.click(
             fn=backend.sam_stroke,
-            inputs=[drawing_board, last_draw, frame_num, ann_obj_id],
+            inputs=[drawing_board, last_draw, frame_num],
             outputs=[input_first_frame, drawing_board, last_draw]
         )
 
@@ -281,6 +281,12 @@ def seg_track_app():
         }
     )
 
+def get_args():
+    parser = argparse.ArgumentParser(description="Process a file path.")
+    parser.add_argument('base_dir', type=str, default=os.path.join(os.getcwd(), 'annotation'),
+                        nargs='?', help="Path to the file")
+    args = parser.parse_args()
+    return args
 
 if __name__ == "__main__":
-    seg_track_app()
+    seg_track_app(get_args())

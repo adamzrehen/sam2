@@ -42,20 +42,12 @@ class AlgoAPI:
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
 
-        if checkpoint == "tiny":
-            sam2_checkpoint = "checkpoints/sam2_hiera_tiny.pt"
-            model_cfg = "sam2_hiera_t.yaml"
-        elif checkpoint == "small":
-            sam2_checkpoint = "checkpoints/sam2_hiera_small.pt"
-            model_cfg = "sam2_hiera_s.yaml"
-        elif checkpoint == "base-plus":
-            sam2_checkpoint = "checkpoints/sam2_hiera_base_plus.pt"
-            model_cfg = "sam2_hiera_b+.yaml"
-        elif checkpoint == "large":
-            sam2_checkpoint = "checkpoints/sam2_hiera_large.pt"
-            model_cfg = "sam2_hiera_l.yaml"
-        else:
+        # Load model
+        if checkpoint not in ["tiny", "sam2_hiera_t.yaml", "base-plus", "large"]:
             raise ValueError(f"Invalid checkpoint: {checkpoint}")
+        else:
+            sam2_checkpoint = self.config[checkpoint]['sam2_checkpoint']
+            model_cfg = self.config[checkpoint]['model_cfg']
 
         assert os.path.exists(sam2_checkpoint), (f"Please download MedSem Checkpoint from:\n"
                                                  f"https://github.com/SuperMedIntel/Medical-SAM2/blob/main/checkpoints/download_ckpts.sh \n"

@@ -13,15 +13,16 @@ from algo_api import AlgoAPI
 
 
 class Backend:
-    def __init__(self, config):
-        self.base_dir = os.path.join(os.getcwd(), 'annotation')
+    def __init__(self, config, base_dir):
+        self.base_dir = base_dir
         self.config = config
         self.algo_api = AlgoAPI(base_dir=self.base_dir, config=self.config)
         self.video = {}
         self.segmentation_state = True
         self.segment_id = 0
+        self.ann_obj_id = 0
 
-    def show_res_by_slider(self, frame_per, click_stack):
+    def move_slider(self, frame_per, click_stack):
         image_path = os.path.join(self.video['video_metadata']['output_dir'], 'output_frames')
         output_combined_dir = os.path.join(self.video['video_metadata']['output_dir'], 'output_combined')
 
@@ -41,7 +42,8 @@ class Backend:
             masked_frame = self.get_masked_frame(frame_per, click_stack)
             return masked_frame, frame_per
 
-    def tracking_objects(self, frame_num, input_video, click_stack):
+    def tracking_objects(self, frame_num, click_stack):
+        input_video = self.video['segments'][self.segment_id]['path']
         output_keys = ['frames_dir', 'masks_dir', 'combined_dir', 'video_path',
                        'zip_path']
         output_paths = {key: os.path.join(self.base_dir, self.video['video_metadata']['output_dir'], self.config[key])
@@ -81,10 +83,8 @@ class Backend:
         zip_folder(output_paths['masks_dir'], output_paths['zip_path'])
         return final_masked_frame, final_masked_frame
 
-    @staticmethod
-    def increment_ann_obj_id(ann_obj_id):
-        ann_obj_id += 1
-        return ann_obj_id
+    def increment_ann_obj_id(self):
+        self.ann_obj_id += 1
 
     @staticmethod
     def drawing_board_get_input_first_frame(input_first_frame):
@@ -274,7 +274,6 @@ class Backend:
                     "Processing complete. Select a segment to begin.",
                     self.video['segments'][0]['path'],
                     gr.Slider(maximum=self.video['metadata']['segments_created'], value=1),
-                    self.video['metadata']
                 )
             else:
                 yield "Error: Failed to split video.", None, gr.Slider(), None
@@ -284,13 +283,10 @@ class Backend:
             yield f"Error during upload: {str(e)}", None, gr.Slider(), None
 
     def load_video_segment(self, index):
-        print(f"DEBUG: index={index}, segments={self.video['paths']}")
         self.segment_id = index
-        return self.video['paths'][index - 1]
 
     def increment_video_index(self, current_index):
         """Increment video index while staying within bounds"""
-        print(f"Current index: {current_index}, Segments: {self.video['paths']}")  # Debug print
         max_index = len(self.video['paths']) if self.video['paths'] else 1
         return min(max_index, current_index + 1)
 
@@ -299,29 +295,30 @@ class Backend:
         """Decrement video index while staying within bounds"""
         return max(1, current_index - 1)
 
-    def sam_stroke(self, drawing_board, last_draw, frame_num, ann_obj_id):
-        return self.algo_api.sam_stroke(drawing_board, last_draw, frame_num, ann_obj_id)
+    def sam_stroke(self, drawing_board, last_draw, frame_num):
+        return self.algo_api.sam_stroke(drawing_board, last_draw, frame_num)
 
-    def preprocess_video(self, input_video, scale_slider, checkpoint):
+    def preprocess_video(self, scale_slider, checkpoint):
+        input_video = self.video['segments'][self.segment_id]['path']
         output_paths, first_frame_rgb = get_meta_from_video(self, input_video, scale_slider)
         click_stack = load_click_stack(self)
         click_stack, num_frames = self.algo_api.initialize_sam(checkpoint, output_paths, click_stack)
         masked_frame = self.get_masked_frame(0, click_stack)
-        return click_stack, masked_frame, 0, gr.Slider(maximum=num_frames - 1, value=0)
+        return click_stack, masked_frame, gr.Slider(maximum=num_frames - 1, value=0)
 
-    def sam_click(self, frame_num, point_mode, click_stack, ann_obj_id, evt: gr.SelectData):
+    def sam_click(self, frame_num, point_mode, click_stack, evt: gr.SelectData):
         points_dict, labels_dict = click_stack
         ann_frame_idx = frame_num  # the frame index we interact with
         point = np.array([[evt.index[0], evt.index[1]]], dtype=np.float32)
         label = np.array([1], np.int32) if point_mode == "Positive" else np.array([0], np.int32)
 
         # Initialize nested dictionaries and arrays using setdefault
-        points_dict.setdefault(ann_frame_idx, {}).setdefault(ann_obj_id, np.empty((0, 2), dtype=np.float32))
-        labels_dict.setdefault(ann_frame_idx, {}).setdefault(ann_obj_id, np.empty((0,), dtype=np.int32))
+        points_dict.setdefault(ann_frame_idx, {}).setdefault(self.ann_obj_id, np.empty((0, 2), dtype=np.float32))
+        labels_dict.setdefault(ann_frame_idx, {}).setdefault(self.ann_obj_id, np.empty((0,), dtype=np.int32))
 
         # Append new point and label
-        points_dict[ann_frame_idx][ann_obj_id] = np.append(points_dict[ann_frame_idx][ann_obj_id], point, axis=0)
-        labels_dict[ann_frame_idx][ann_obj_id] = np.append(labels_dict[ann_frame_idx][ann_obj_id], label, axis=0)
+        points_dict[ann_frame_idx][self.ann_obj_id] = np.append(points_dict[ann_frame_idx][self.ann_obj_id], point, axis=0)
+        labels_dict[ann_frame_idx][self.ann_obj_id] = np.append(labels_dict[ann_frame_idx][self.ann_obj_id], label, axis=0)
 
         self.algo_api.add_points(click_stack)
         save_click_stack(self, click_stack)

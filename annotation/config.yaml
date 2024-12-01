@@ -3,5 +3,15 @@ masks_dir: 'output_masks'
 combined_dir: 'output_combined'
 video_path: 'output_video.mp4'
 zip_path: 'output_masks.zip'
-sam2_checkpoint_tiny: "checkpoints/sam2_hiera_tiny.pt"
-model_cfg_tiny: = "sam2_hiera_t.yaml"
+tiny:
+  sam2_checkpoint: "checkpoints/sam2_hiera_tiny.pt"
+  model_cfg: "sam2_hiera_t.yaml"
+small:
+  sam2_checkpoint: "checkpoints/sam2_hiera_small.pt"
+  model_cfg: "sam2_hiera_s.yaml"
+base-plus:
+  sam2_checkpoint: "checkpoints/sam2_hiera_base_plus.pt"
+  model_cfg: "sam2_hiera_b+.yaml"
+large:
+  sam2_checkpoint: "checkpoints/sam2_hiera_large.pt"
+  model_cfg: "sam2_hiera_l.yaml"
