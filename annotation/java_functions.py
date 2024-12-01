@@ -150,3 +150,14 @@ def return_java_function(java_input):
             return [response ? 1 : 0]; // Return a list with 1 for OK, 0 for Cancel
         }
         """
+    elif java_input == 'generic_dialog':
+        return """
+            (upload_status) => {
+                if (upload_status === 'Video uploaded from database. Select a segment to begin.') {
+                    alert('The video already exists in the database. Change name or continue annotation');  
+                    // Display an alert with only OK button
+                    return [1];  // Return 1 to indicate that the OK button was pressed
+                }
+                return [0];  // If the string does not match, return 0
+            }
+            """

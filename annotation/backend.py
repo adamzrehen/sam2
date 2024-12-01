@@ -228,10 +228,8 @@ class Backend:
             # set output directory
             video_metadata["output_dir"] = os.path.join(self.base_dir, 'data', 'sam2', video_metadata["video_name"])
 
-            status = False
-            if os.path.exists(video_metadata["output_dir"]):
-                 status = load_existing_video_metadata(self, video_metadata)
-            if not status:
+            existing_video = load_existing_video_metadata(self, video_metadata)
+            if not existing_video:
                 os.makedirs(video_metadata["output_dir"])
 
                 # Move file to output directory
@@ -270,8 +268,10 @@ class Backend:
                     pickle.dump(self.video, file)
 
             if self.video['segments']:
+                msg = 'Video uploaded from database. Select a segment to begin.' if existing_video else \
+                      'Processing complete. Select a segment to begin.'
                 yield (
-                    "Processing complete. Select a segment to begin.",
+                    msg,
                     self.video['segments'][0]['path'],
                     gr.Slider(maximum=self.video['metadata']['segments_created'], value=1),
                 )

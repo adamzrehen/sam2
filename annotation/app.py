@@ -253,6 +253,9 @@ def seg_track_app(args):
             outputs=[upload_status, seg_input_video, video_index_slider],
         )
 
+        upload_status.change(None, inputs=[upload_status], outputs=[],
+                             js=return_java_function(java_input='generic_dialog'))
+
         video_index_slider.change(
             fn=backend.load_video_segment,
             inputs=[video_index_slider],
