@@ -176,14 +176,14 @@ def seg_track_app(args):
         frame_per.change(
             fn=backend.move_slider,
             inputs=[frame_per, click_stack],
-            outputs=[input_first_frame, frame_num]
+            outputs=[input_first_frame, frame_num, *list(tissue_info.values())]
         )
 
         # Listen to the preprocess button click to get the first frame of video with scaling
         preprocess_button.click(
             fn=backend.preprocess_video,
-            inputs=[scale_slider, checkpoint],
-            outputs=[click_stack, input_first_frame, frame_per]
+            inputs=[scale_slider, checkpoint, *list(tissue_info.values())],
+            outputs=[click_stack, input_first_frame, frame_per, *list(tissue_info.values())]
         )
 
         # Interactively modify the mask acc click
@@ -196,7 +196,7 @@ def seg_track_app(args):
         # Track object in video
         track_for_video.click(
             fn=backend.tracking_objects,
-            inputs=[frame_num, click_stack],
+            inputs=[click_stack],
             outputs=[input_first_frame, drawing_board]
         )
 
@@ -231,7 +231,7 @@ def seg_track_app(args):
 
         undo_point.click(
             fn=backend.undo_last_point,
-            inputs=[frame_num, click_stack],
+            inputs=[click_stack],
             outputs=[input_first_frame, click_stack]
         )
 
@@ -261,7 +261,7 @@ def seg_track_app(args):
 
         toggle_seg.click(
             fn=backend.toggle_segmentation,
-            inputs=[frame_num, click_stack],
+            inputs=[click_stack],
             outputs=[input_first_frame, drawing_board, click_stack]
         )
 

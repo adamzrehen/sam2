@@ -24,9 +24,10 @@ class Backend:
         self.segmentation_state = True
         self.segment_id = 0
         self.ann_obj_id = 0
+        self.frame_num = 0
         self.tissue_info = {}
 
-    def move_slider(self, frame_per, click_stack):
+    def move_slider(self, frame_num, click_stack):
         image_path = os.path.join(self.video['video_metadata']['output_dir'], 'output_frames')
         output_combined_dir = os.path.join(self.video['video_metadata']['output_dir'], 'output_combined')
 
@@ -43,10 +44,12 @@ class Backend:
             print("No output results found")
             return None, None
         else:
-            masked_frame = self.get_masked_frame(frame_per, click_stack)
-            return masked_frame, frame_per
+            self.frame_num = frame_num
+            tissue_info = self.update_tissue_info()
+            masked_frame = self.get_masked_frame(click_stack)
+            return masked_frame, frame_num, *tissue_info
 
-    def tracking_objects(self, frame_num, click_stack):
+    def tracking_objects(self, click_stack):
         input_video = self.video['segments'][self.segment_id]['path']
         output_keys = ['frames_dir', 'masks_dir', 'combined_dir', 'video_path',
                        'zip_path']
@@ -67,11 +70,11 @@ class Backend:
         frame_files = sorted([f for f in os.listdir(output_paths['frames_dir']) if f.endswith('.jpg')])
         for frame_id, frame_file in enumerate(frame_files):
             frame_idx = int(os.path.splitext(frame_file)[0])
-            masked_frame = self.get_masked_frame(frame_id, click_stack, mask_dir=output_paths['masks_dir'])
+            masked_frame = self.get_masked_frame(click_stack, mask_dir=output_paths['masks_dir'])
             combined_output_path = os.path.join(output_paths['combined_dir'], f'{frame_idx:07d}.png')
             combined_image_bgr = cv2.cvtColor(masked_frame, cv2.COLOR_RGB2BGR)
             cv2.imwrite(combined_output_path, combined_image_bgr)
-            if frame_idx == frame_num:
+            if frame_idx == self.frame_num:
                 final_masked_frame = masked_frame
 
         cap = cv2.VideoCapture(input_video)
@@ -94,51 +97,23 @@ class Backend:
     def drawing_board_get_input_first_frame(input_first_frame):
         return input_first_frame
 
-    def undo_last_point(self, frame_num, click_stack):
+    def undo_last_point(self, click_stack):
         # Remove the last point and its corresponding label
         points_dict, labels_dict = click_stack
-        if frame_num in points_dict and frame_num in labels_dict:
-            for obj_id in points_dict[frame_num]:
-                if len(points_dict[frame_num][obj_id]) > 0:
-                    points_dict[frame_num][obj_id] = points_dict[frame_num][obj_id][:-1]
-                    labels_dict[frame_num][obj_id] = labels_dict[frame_num][obj_id][:-1]
+        if self.frame_num in points_dict and self.frame_num in labels_dict:
+            for obj_id in points_dict[self.frame_num]:
+                if len(points_dict[self.frame_num][obj_id]) > 0:
+                    points_dict[self.frame_num][obj_id] = points_dict[self.frame_num][obj_id][:-1]
+                    labels_dict[self.frame_num][obj_id] = labels_dict[self.frame_num][obj_id][:-1]
 
         # Redraw existing masks if any
         self.algo_api.add_points((points_dict, labels_dict))
-        masked_frame = self.get_masked_frame(frame_num, click_stack)
-
+        masked_frame = self.get_masked_frame(click_stack)
         return masked_frame, (points_dict, labels_dict)
 
-    @staticmethod
-    def zoom_to_last_point(frame_num, click_stack):
-        points_dict, labels_dict = click_stack
-
-        # Get current frame points
-        if frame_num in points_dict and frame_num in labels_dict:
-            # Find the last positive point across all objects
-            last_point = None
-            for obj_id in points_dict[frame_num]:
-                points = points_dict[frame_num][obj_id]
-                labels = labels_dict[frame_num][obj_id]
-                if len(points) > 0 and len(labels) > 0:
-                    # Find positive points (label == 1)
-                    positive_indices = np.where(labels == 1)[0]
-                    if len(positive_indices) > 0:
-                        last_positive_idx = positive_indices[-1]
-                        last_point = points[last_positive_idx]
-
-        if last_point is not None:
-            x, y = last_point[0], last_point[1]
-        else:
-            image_path = f'output_frames/{frame_num:07d}.jpg'
-            image = cv2.imread(image_path)
-            h, w = image.shape[:2]
-            x, y = w / 2, h / 2
-        return x, y
-
-    def toggle_segmentation(self, frame_num, click_stack):
+    def toggle_segmentation(self, click_stack):
         self.segmentation_state = not self.segmentation_state
-        masked_frame = self.get_masked_frame(frame_num, click_stack)
+        masked_frame = self.get_masked_frame(click_stack)
         return masked_frame, masked_frame, click_stack
 
     @staticmethod
@@ -317,35 +292,49 @@ class Backend:
             for key, val in zip(keys, values):
                 self.tissue_info[key] = [val]
             self.tissue_info['Segment ID'] = [self.segment_id]
-            self.tissue_info['Frame Num'] = [0]
+            self.tissue_info['Frame Num'] = [self.frame_num]
+            self.tissue_info = pd.DataFrame(self.tissue_info)
         else:
-            idx = [(segment, frame) for segment, frame in
-                   zip(self.tissue_info['Segment ID'], self.tissue_info['Frame Num'])
-                   if segment == self.segment_id and frame == 0]
-            if idx:
-                idx = self.tissue_info['Segment ID'].index(self.segment_id)  # Get index of the first matching entry
-                for key, val in zip(keys, values):
-                    self.tissue_info[key][idx] = val
+            filtered_rows = self.tissue_info[(self.tissue_info['Segment ID'] == self.segment_id) &
+                                             (self.tissue_info['Frame Num'] == self.frame_num)]
+            if len(filtered_rows):
+                if len(values):
+                    condition = (self.tissue_info['Segment ID'] == self.segment_id) & \
+                                (self.tissue_info['Frame Num'] == self.frame_num)
+                    for key, val in zip(keys, values):
+                        self.tissue_info.loc[condition, key] = val
+                    self.save_tissue_info()
+                    return
             else:
-                for key, val in zip(keys, values):
-                    self.tissue_info[key].append(val)
-                self.tissue_info['Segment ID'].append(self.segment_id)
-                self.tissue_info['Frame Num'].append(0)
+                # Copy the last frame data to the new frame (sticky)
+                filtered_rows = self.tissue_info[(self.tissue_info['Segment ID'] == self.segment_id) &
+                                                 (self.tissue_info['Frame Num'] == self.frame_num - 1)]
+                filtered_rows['Frame Num'] = self.frame_num
+                self.tissue_info = pd.concat([self.tissue_info, filtered_rows], ignore_index=True)
 
+        filtered_rows = self.tissue_info[(self.tissue_info['Segment ID'] == self.segment_id) &
+                                         (self.tissue_info['Frame Num'] == self.frame_num)]
+        filtered_rows = filtered_rows.drop(['Segment ID', 'Frame Num'], axis=1)
+        self.save_tissue_info()
+        return list(filtered_rows.values[0])
+
+    def save_tissue_info(self):
         if 'video_metadata' in self.video:
             pd.DataFrame(self.tissue_info).T.to_csv(os.path.join(self.video['video_metadata']['output_dir'],
                                                                  'tissue_data.csv'), index=True)
 
+
     def sam_stroke(self, drawing_board, last_draw, frame_num):
         return self.algo_api.sam_stroke(drawing_board, last_draw, frame_num)
 
-    def preprocess_video(self, scale_slider, checkpoint):
+    def preprocess_video(self, scale_slider, checkpoint, *tissue_info):
         input_video = self.video['segments'][self.segment_id]['path']
         output_paths, first_frame_rgb = get_meta_from_video(self, input_video, scale_slider)
         click_stack = load_click_stack(self)
+        tissue_info = self.update_tissue_info(*tissue_info)
         click_stack, num_frames = self.algo_api.initialize_sam(checkpoint, output_paths, click_stack)
-        masked_frame = self.get_masked_frame(0, click_stack)
-        return click_stack, masked_frame, gr.Slider(maximum=num_frames - 1, value=0)
+        masked_frame = self.get_masked_frame(click_stack)
+        return click_stack, masked_frame, gr.Slider(maximum=num_frames - 1, value=0), *tissue_info
 
     def sam_click(self, frame_num, point_mode, click_stack, evt: gr.SelectData):
         points_dict, labels_dict = click_stack
@@ -363,7 +352,7 @@ class Backend:
 
         self.algo_api.add_points(click_stack)
         save_click_stack(self, click_stack)
-        masked_frame_with_markers = self.get_masked_frame(frame_num, click_stack)
+        masked_frame_with_markers = self.get_masked_frame(click_stack)
         return masked_frame_with_markers, click_stack
 
     def clean(self, reset_clicked_state, scale_slider, checkpoint, click_stack, input_first_frame, frame_per):
@@ -372,29 +361,30 @@ class Backend:
             input_video = self.video['segments'][self.segment_id]['path']
             output_paths, first_frame_rgb = get_meta_from_video(self, input_video, scale_slider)
             click_stack = ({}, {})
+            self.frame_num = 0
             click_stack, num_frames = self.algo_api.initialize_sam(checkpoint, output_paths, click_stack)
-            masked_frame = self.get_masked_frame(0, click_stack)
+            masked_frame = self.get_masked_frame(click_stack)
             return click_stack, masked_frame, gr.Slider(maximum=num_frames - 1, value=0)
         else:
             return click_stack, input_first_frame, frame_per
 
-    def get_masked_frame(self, frame_num, click_stack, mask_dir=None):
-        image_path = os.path.join(self.video['video_metadata']['output_dir'], f'output_frames/{frame_num:07d}.jpg')
+    def get_masked_frame(self, click_stack, mask_dir=None):
+        image_path = os.path.join(self.video['video_metadata']['output_dir'], f'output_frames/{self.frame_num:07d}.jpg')
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         masked_frame = image.copy()
 
         if self.segmentation_state:
-            if frame_num in self.algo_api.segment_masks:
-                for obj_id in self.algo_api.segment_masks[frame_num]:
-                    mask = self.algo_api.segment_masks[frame_num][obj_id]
+            if self.frame_num in self.algo_api.segment_masks:
+                for obj_id in self.algo_api.segment_masks[self.frame_num]:
+                    mask = self.algo_api.segment_masks[self.frame_num][obj_id]
                     masked_frame = show_mask(mask, image=masked_frame, obj_id=obj_id)
                     if mask_dir is not None:
-                        mask_output_path = os.path.join(mask_dir, f'{obj_id}_{frame_num:07d}.png')
+                        mask_output_path = os.path.join(mask_dir, f'{obj_id}_{self.frame_num:07d}.png')
                         cv2.imwrite(mask_output_path, masked_frame)
 
         # Always draw markers
         points_dict, labels_dict = click_stack
-        if frame_num in points_dict and frame_num in labels_dict:
-            masked_frame = draw_markers(masked_frame, points_dict[frame_num], labels_dict[frame_num])
+        if self.frame_num in points_dict and self.frame_num in labels_dict:
+            masked_frame = draw_markers(masked_frame, points_dict[self.frame_num], labels_dict[self.frame_num])
         return masked_frame
