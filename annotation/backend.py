@@ -6,6 +6,9 @@ import gradio as gr
 import ffmpeg
 import numpy as np
 import pickle
+
+import pandas as pd
+
 from utils import draw_markers, show_mask, zip_folder
 from file_handler import (clear_folder, get_meta_from_video, load_click_stack, save_click_stack,
                           load_existing_video_metadata)
@@ -294,6 +297,17 @@ class Backend:
     def decrement_video_index(current_index):
         """Decrement video index while staying within bounds"""
         return max(1, current_index - 1)
+
+    def update_patient_info(self, *values):
+        keys = ['Tagging Status', 'Camera', 'Annotator', 'Patient Code', 'Gender', 'Age', 'Height', 'Width', 'Thickness',
+                'Tumor Height', 'Tumor Width', 'Depth', 'Grade', 'Stage', 'LVI', 'PNI', 'Deep Superficial',
+                'Tissue Layer Invasion']
+        patient_info = {}
+        for key, val in zip(keys, values):
+            patient_info[key] = [val]
+        if 'video_metadata' in self.video:
+            pd.DataFrame(patient_info).T.to_csv(os.path.join(self.video['video_metadata']['output_dir'],
+                                                             'patient_data.csv'), index=True)
 
     def sam_stroke(self, drawing_board, last_draw, frame_num):
         return self.algo_api.sam_stroke(drawing_board, last_draw, frame_num)

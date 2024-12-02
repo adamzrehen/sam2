@@ -4,6 +4,7 @@ import yaml
 import argparse
 from java_functions import return_java_function
 from backend import Backend
+from panels import patient_panel
 
 
 def seg_track_app(args):
@@ -46,7 +47,7 @@ def seg_track_app(args):
 
         with gr.Row():
             # Left column - make it wider with scale=0.7 (70% of width)
-            with gr.Column(scale=1):
+            with gr.Column(scale=2):
                 with gr.Row():
                     # New large video upload section
                     with gr.Group():
@@ -155,6 +156,10 @@ def seg_track_app(args):
                             interactive=True,
                         )
 
+            # Add patient panel as new column
+            with gr.Column(scale=1):
+                patient_info, patient_submit, patient_output = patient_panel()
+
         gr.Markdown(
             '''
             <div style="text-align:center; margin-top: 20px;">
@@ -227,6 +232,12 @@ def seg_track_app(args):
             fn=backend.undo_last_point,
             inputs=[frame_num, click_stack],
             outputs=[input_first_frame, click_stack]
+        )
+
+        patient_submit.click(
+            fn=backend.update_patient_info,
+            inputs=list(patient_info.values()),
+            outputs=patient_output,
         )
 
         # Add JavaScript for zoom functionality
