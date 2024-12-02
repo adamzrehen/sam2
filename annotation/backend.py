@@ -24,6 +24,7 @@ class Backend:
         self.segmentation_state = True
         self.segment_id = 0
         self.ann_obj_id = 0
+        self.tissue_info = {}
 
     def move_slider(self, frame_per, click_stack):
         image_path = os.path.join(self.video['video_metadata']['output_dir'], 'output_frames')
@@ -308,6 +309,32 @@ class Backend:
         if 'video_metadata' in self.video:
             pd.DataFrame(patient_info).T.to_csv(os.path.join(self.video['video_metadata']['output_dir'],
                                                              'patient_data.csv'), index=True)
+
+    def update_tissue_info(self, *values):
+        keys = ['Filter', 'Perspective', 'Tumor Type', 'Indigo Carmine', 'Good Image', 'Indication', 'Site', 'Approved',
+                'Health Status', 'Comment']
+        if not len(self.tissue_info):
+            for key, val in zip(keys, values):
+                self.tissue_info[key] = [val]
+            self.tissue_info['Segment ID'] = [self.segment_id]
+            self.tissue_info['Frame Num'] = [0]
+        else:
+            idx = [(segment, frame) for segment, frame in
+                   zip(self.tissue_info['Segment ID'], self.tissue_info['Frame Num'])
+                   if segment == self.segment_id and frame == 0]
+            if idx:
+                idx = self.tissue_info['Segment ID'].index(self.segment_id)  # Get index of the first matching entry
+                for key, val in zip(keys, values):
+                    self.tissue_info[key][idx] = val
+            else:
+                for key, val in zip(keys, values):
+                    self.tissue_info[key].append(val)
+                self.tissue_info['Segment ID'].append(self.segment_id)
+                self.tissue_info['Frame Num'].append(0)
+
+        if 'video_metadata' in self.video:
+            pd.DataFrame(self.tissue_info).T.to_csv(os.path.join(self.video['video_metadata']['output_dir'],
+                                                                 'tissue_data.csv'), index=True)
 
     def sam_stroke(self, drawing_board, last_draw, frame_num):
         return self.algo_api.sam_stroke(drawing_board, last_draw, frame_num)

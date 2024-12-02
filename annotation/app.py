@@ -4,7 +4,7 @@ import yaml
 import argparse
 from java_functions import return_java_function
 from backend import Backend
-from panels import patient_panel
+from panels import patient_panel, tissue_panel
 
 
 def seg_track_app(args):
@@ -158,7 +158,8 @@ def seg_track_app(args):
 
             # Add patient panel as new column
             with gr.Column(scale=1):
-                patient_info, patient_submit, patient_output = patient_panel()
+                patient_info, patient_submit = patient_panel()
+                tissue_info = tissue_panel()
 
         gr.Markdown(
             '''
@@ -237,8 +238,15 @@ def seg_track_app(args):
         patient_submit.click(
             fn=backend.update_patient_info,
             inputs=list(patient_info.values()),
-            outputs=patient_output,
+            outputs=[],
         )
+
+        for key, val in tissue_info.items():
+            val.change(
+                fn=backend.update_tissue_info,
+                inputs=list(tissue_info.values()),
+                outputs=[]
+            )
 
         # Add JavaScript for zoom functionality
         zoom_in.click(fn=None, inputs=[], outputs=[], js=return_java_function(java_input='zoom_in'))
