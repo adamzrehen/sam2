@@ -10,16 +10,7 @@ from panels import patient_panel, tissue_panel
 def seg_track_app(args):
     with open(os.path.join(os.path.dirname(__file__), 'config.yaml'), "r") as file:
         config = yaml.safe_load(file)  # safer alternative to yaml.load
-
-    css = """
-    #input_output_video video {
-        max-height: 550px;
-        max-width: 100%;
-        height: auto;
-    }
-    """
-
-    app = gr.Blocks(css=css)
+    app = gr.Blocks(css=return_java_function(java_input='interface'))
     backend = Backend(config, args.base_dir)
 
     with app:
@@ -142,6 +133,7 @@ def seg_track_app(args):
                             maximum=100.0,
                             step=1.0,
                             value=0.0,
+                            elem_id="frame_num",
                         )
                         new_object_button = gr.Button(
                             value="Add New Object",

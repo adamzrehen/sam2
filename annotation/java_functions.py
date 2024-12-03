@@ -1,7 +1,15 @@
 
 
 def return_java_function(java_input):
-    if java_input == 'zoom_in':
+    if java_input == 'interface':
+        return """
+            #input_output_video video {
+                max-height: 550px;
+                max-width: 100%;
+                height: auto;
+            }
+            """
+    elif java_input == 'zoom_in':
         return """
             () => {
                 let images = document.querySelectorAll('img');
