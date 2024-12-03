@@ -263,6 +263,7 @@ class Backend:
 
     def load_video_segment(self, index):
         self.segment_id = index
+        return self.video['paths'][index - 1]
 
     def increment_video_index(self, current_index):
         """Increment video index while staying within bounds"""
