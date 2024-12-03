@@ -311,9 +311,10 @@ class Backend:
                 sorted_frames = np.sort(np.concatenate([self.tissue_info['Frame Num'].values,
                                                         np.array([self.frame_num])]))
                 sticky_target = sorted_frames[np.searchsorted(sorted_frames, self.frame_num) - 1]
-                filtered_rows = self.tissue_info[(self.tissue_info['Segment ID'] == self.segment_id) &
-                                                 (self.tissue_info['Frame Num'] == sticky_target)]
-                filtered_rows['Frame Num'] = self.frame_num
+                filter_condition = ((self.tissue_info['Segment ID'] == self.segment_id) &
+                                    (self.tissue_info['Frame Num'] == sticky_target))
+                filtered_rows = self.tissue_info[filter_condition]
+                self.tissue_info.loc[filter_condition, 'Frame Num'] = self.frame_num
                 self.tissue_info = pd.concat([self.tissue_info, filtered_rows], ignore_index=True)
 
         filtered_rows = self.tissue_info[(self.tissue_info['Segment ID'] == self.segment_id) &
